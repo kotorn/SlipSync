@@ -1,0 +1,119 @@
+<resources>
+    <string name="app_name">SlipSync</string>
+    <string name="tile_label">ซิงค์สลิป</string>
+    <string name="share_target_title">คิวสลิป SlipSync</string>
+
+    <!-- Notification channels -->
+    <string name="channel_success_name">อัปโหลดสลิปสำเร็จ</string>
+    <string name="channel_success_desc">การแจ้งเตือนแบบเงียบเมื่อส่งสลิปขึ้น Google Drive สำเร็จ</string>
+    <string name="channel_failure_name">ข้อผิดพลาดในการอัปโหลด</string>
+    <string name="channel_failure_desc">แจ้งเตือนเมื่อการอัปโหลดล้มเหลวเกิน 3 ครั้ง</string>
+    <string name="channel_watchdog_name">ระบบเฝ้าระวังการซิงค์</string>
+    <string name="channel_watchdog_desc">แจ้งเตือนหากระบบตรวจจับเบื้องหลังไม่ทำงานเกิน 24 ชั่วโมง</string>
+    <string name="notif_success_title">อัปโหลดสลิปสำเร็จ</string>
+    <string name="notif_success_body">อัปโหลดสลิป %1$d ใบไปยัง Google Drive เรียบร้อยแล้ว</string>
+    <string name="notif_failure_title">อัปโหลดสลิปล้มเหลว</string>
+    <string name="notif_failure_body">สลิป %1$s ส่งไม่สำเร็จหลังจากพยายาม 3 ครั้ง แตะเพื่อตรวจสอบ</string>
+    <string name="notif_watchdog_title">ระบบ SlipSync หยุดทำงาน</string>
+    <string name="notif_watchdog_body">SlipSync ไม่ได้ทำงานนานเกิน 24 ชั่วโมง กรุณาเปิดแอปเพื่อตรวจสอบสิทธิ์เบื้องหลัง</string>
+
+    <!-- General actions -->
+    <string name="action_sync_now">ซิงค์ทันที</string>
+    <string name="action_open_sheet">เปิด Google Sheet</string>
+    <string name="action_settings">ตั้งค่า</string>
+    <string name="action_fix">แก้ไข</string>
+    <string name="action_retry">ลองใหม่</string>
+    <string name="action_ignore">ละเว้น</string>
+    <string name="action_undo">เลิกทำ</string>
+    <string name="action_test_connection">ทดสอบการเชื่อมต่อ</string>
+    <string name="action_copy">คัดลอก</string>
+    <string name="action_copied">คัดลอกไปยังคลิปบอร์ดแล้ว</string>
+    <string name="action_open_drive">เปิดดูใน Google Drive</string>
+    <string name="action_export_logs">ส่งออกบันทึกระบบ</string>
+    <string name="action_backfill">ดึงสลิปย้อนหลัง</string>
+    <string name="action_pause">หยุดซิงค์ชั่วคราว</string>
+    <string name="action_resume">เริ่มซิงค์ต่อ</string>
+
+    <!-- Health Card -->
+    <string name="health_ok_title">ระบบทำงานปกติ</string>
+    <string name="health_ok_desc">ตรวจจับสลิปอัตโนมัติ • ซิงค์ล่าสุด: %1$s</string>
+    <string name="health_pending_title">มีสลิปรออัปโหลด</string>
+    <string name="health_pending_desc">มีสลิป %1$d ใบ กำลังรอการซิงค์</string>
+    <string name="health_action_needed_title">ต้องได้รับการตั้งค่า</string>
+    <string name="health_never_synced">ยังไม่เคยซิงค์</string>
+    <string name="health_just_now">เมื่อสักครู่</string>
+    <string name="health_minutes_ago">%1$d นาทีที่แล้ว</string>
+    <string name="health_hours_ago">%1$d ชั่วโมงที่แล้ว</string>
+
+    <!-- Counters -->
+    <string name="counter_uploaded_today">อัปโหลดวันนี้</string>
+    <string name="counter_pending">รอดำเนินการ</string>
+    <string name="counter_failed">ล้มเหลว</string>
+
+    <!-- Slip status & items -->
+    <string name="status_uploaded">สำเร็จ</string>
+    <string name="status_pending">รอดำเนินการ</string>
+    <string name="status_uploading">กำลังอัปโหลด</string>
+    <string name="status_failed">ล้มเหลว</string>
+    <string name="status_ignored">ละเว้นแล้ว</string>
+    <string name="status_no_qr">ไม่พบ QR</string>
+    <string name="status_has_qr">มี QR Code</string>
+    <string name="empty_slips_title">ยังไม่มีสลิปธนาคาร</string>
+    <string name="empty_slips_desc">เมื่อคุณบันทึกหรือทำรายการโอนเงินในแอปธนาคาร (K PLUS, SCB EASY) สลิปจะปรากฏและซิงค์ที่นี่อัตโนมัติ</string>
+
+    <!-- Partial access banner -->
+    <string name="partial_access_title">ต้องการสิทธิ์เข้าถึงรูปภาพทั้งหมด</string>
+    <string name="partial_access_desc">พบการเลือกสิทธิ์แบบบางส่วนบน Android 14 แอปไม่สามารถตรวจจับสลิปเบื้องหลังได้ กรุณาให้สิทธิ์ "อนุญาตทั้งหมด"</string>
+    <string name="action_grant_full_access">ให้สิทธิ์ทั้งหมด</string>
+
+    <!-- Xiaomi helper -->
+    <string name="xiaomi_helper_title">ตัวช่วยตั้งค่า Xiaomi / HyperOS</string>
+    <string name="xiaomi_helper_desc">เพื่อให้ระบบทำงานเบื้องหลังได้ตลอดเวลาบน HyperOS:</string>
+    <string name="xiaomi_autostart_btn">ตั้งค่า Autostart</string>
+    <string name="xiaomi_battery_btn">แบตเตอรี่ (ไม่จำกัด)</string>
+    <string name="xiaomi_recents_btn">วิธีล็อคแอปในหน้า Recent</string>
+    <string name="xiaomi_recents_dialog_title">วิธีล็อคแอปในหน้า Recent</string>
+    <string name="xiaomi_recents_dialog_body">1. เปิดหน้า Recent Apps (ปัดขึ้นค้างไว้)\n2. กดค้างที่หน้าต่างแอป SlipSync\n3. แตะไอคอนแม่กุญแจเพื่อล็อค\nวิธีนี้จะป้องกันไม่ให้ HyperOS ปิดการทำงานของแอปในเบื้องหลัง</string>
+
+    <!-- Setup & Onboarding -->
+    <string name="onboarding_step_1">สิทธิ์เข้าถึง</string>
+    <string name="onboarding_step_2">Web App</string>
+    <string name="onboarding_step_3">โฟลเดอร์</string>
+    <string name="onboarding_step_4">HyperOS</string>
+    <string name="onboarding_step_5">ทดสอบ</string>
+    <string name="url_label">URL ของ Google Apps Script Web App</string>
+    <string name="token_label">รหัสผ่านความปลอดภัย (Security Token)</string>
+    <string name="test_connection_success">เชื่อมต่อสำเร็จ! Web App พร้อมรับข้อมูล</string>
+    <string name="test_connection_failed">เชื่อมต่อไม่สำเร็จ: %1$s</string>
+    <string name="network_mode_title">โหมดเครือข่าย</string>
+    <string name="network_mode_any">ทุกเครือข่าย (Wi-Fi หรือเน็ตมือถือ)</string>
+    <string name="network_mode_wifi_only">เฉพาะ Wi-Fi เท่านั้น</string>
+    <string name="bank_folders_detected">โฟลเดอร์แอปธนาคารที่ตรวจพบ</string>
+    <string name="other_folders">โฟลเดอร์อื่นๆ</string>
+
+    <!-- Detail screen -->
+    <string name="detail_title">รายละเอียดสลิป</string>
+    <string name="detail_timeline_detected">ตรวจพบภาพในเครื่อง</string>
+    <string name="detail_timeline_qr_ok">อ่านรหัส QR Code สำเร็จ</string>
+    <string name="detail_timeline_qr_none">ไม่พบ QR (ใช้รหัส SHA-256)</string>
+    <string name="detail_timeline_uploaded">อัปโหลดขึ้น Google Drive เรียบร้อย</string>
+    <string name="detail_sha256">รหัส SHA-256</string>
+    <string name="detail_qr_payload">ข้อมูล QR Code</string>
+    <string name="detail_folder">โฟลเดอร์ต้นทาง</string>
+    <string name="detail_file_name">ชื่อไฟล์บนคลาวด์</string>
+    <string name="detail_time">เวลาที่บันทึก</string>
+
+    <!-- Health checks -->
+    <string name="health_check_title">ตรวจสอบความพร้อมของระบบ</string>
+    <string name="check_storage_title">สิทธิ์เข้าถึงรูปภาพทั้งหมด</string>
+    <string name="check_url_title">ตั้งค่า URL Web App แล้ว</string>
+    <string name="check_token_title">ตั้งค่า Security Token แล้ว</string>
+    <string name="check_network_title">การเชื่อมต่ออินเทอร์เน็ต</string>
+    <string name="check_battery_title">ยกเว้นการประหยัดแบตเตอรี่แล้ว</string>
+    <string name="check_worker_title">ระบบตรวจจับอัตโนมัติ (WorkManager)</string>
+
+    <!-- Language -->
+    <string name="language_title">ภาษา (Language)</string>
+    <string name="lang_thai">ไทย (Thai)</string>
+    <string name="lang_english">English</string>
+</resources>

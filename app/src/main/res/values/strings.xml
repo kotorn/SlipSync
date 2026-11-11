@@ -1,0 +1,119 @@
+<resources>
+    <string name="app_name">SlipSync</string>
+    <string name="tile_label">Sync now</string>
+    <string name="share_target_title">SlipSync Queue</string>
+
+    <!-- Notification channels -->
+    <string name="channel_success_name">Upload Success</string>
+    <string name="channel_success_desc">Silent notifications for successful slip uploads</string>
+    <string name="channel_failure_name">Upload Errors</string>
+    <string name="channel_failure_desc">Alerts when slip uploads fail after multiple retries</string>
+    <string name="channel_watchdog_name">Sync Watchdog</string>
+    <string name="channel_watchdog_desc">Alerts when background sync has not run for 24+ hours</string>
+    <string name="notif_success_title">Slips Uploaded</string>
+    <string name="notif_success_body">Successfully uploaded %1$d slip(s) to Google Drive.</string>
+    <string name="notif_failure_title">Upload Failed</string>
+    <string name="notif_failure_body">Slip %1$s failed to upload after 3 attempts. Tap to review.</string>
+    <string name="notif_watchdog_title">SlipSync Inactive</string>
+    <string name="notif_watchdog_body">SlipSync has not run for over 24 hours. Open the app to verify background permissions.</string>
+
+    <!-- General actions -->
+    <string name="action_sync_now">Sync now</string>
+    <string name="action_open_sheet">Open Sheet</string>
+    <string name="action_settings">Settings</string>
+    <string name="action_fix">Fix</string>
+    <string name="action_retry">Retry</string>
+    <string name="action_ignore">Ignore</string>
+    <string name="action_undo">Undo</string>
+    <string name="action_test_connection">Test connection</string>
+    <string name="action_copy">Copy</string>
+    <string name="action_copied">Copied to clipboard</string>
+    <string name="action_open_drive">Open in Google Drive</string>
+    <string name="action_export_logs">Export logs</string>
+    <string name="action_backfill">Backfill slips</string>
+    <string name="action_pause">Pause sync</string>
+    <string name="action_resume">Resume sync</string>
+
+    <!-- Health Card -->
+    <string name="health_ok_title">All systems normal</string>
+    <string name="health_ok_desc">Auto-sync active • Last sync: %1$s</string>
+    <string name="health_pending_title">Slips pending upload</string>
+    <string name="health_pending_desc">%1$d slip(s) waiting for sync</string>
+    <string name="health_action_needed_title">Action needed</string>
+    <string name="health_never_synced">Never synced</string>
+    <string name="health_just_now">Just now</string>
+    <string name="health_minutes_ago">%1$d min ago</string>
+    <string name="health_hours_ago">%1$d hr ago</string>
+
+    <!-- Counters -->
+    <string name="counter_uploaded_today">Uploaded today</string>
+    <string name="counter_pending">Pending</string>
+    <string name="counter_failed">Failed</string>
+
+    <!-- Slip status & items -->
+    <string name="status_uploaded">Uploaded</string>
+    <string name="status_pending">Pending</string>
+    <string name="status_uploading">Uploading</string>
+    <string name="status_failed">Failed</string>
+    <string name="status_ignored">Ignored</string>
+    <string name="status_no_qr">No QR found</string>
+    <string name="status_has_qr">QR verified</string>
+    <string name="empty_slips_title">No bank slips yet</string>
+    <string name="empty_slips_desc">When you save or receive transfer slips in banking apps (K PLUS, SCB EASY), they will automatically appear and sync here.</string>
+
+    <!-- Partial access banner -->
+    <string name="partial_access_title">Full photo access required</string>
+    <string name="partial_access_desc">Android 14 selected partial photo access. SlipSync cannot detect new bank slips in the background without full access.</string>
+    <string name="action_grant_full_access">Grant Full Access</string>
+
+    <!-- Xiaomi helper -->
+    <string name="xiaomi_helper_title">Xiaomi / HyperOS Optimization</string>
+    <string name="xiaomi_helper_desc">Ensure uninterrupted background detection on HyperOS:</string>
+    <string name="xiaomi_autostart_btn">Autostart settings</string>
+    <string name="xiaomi_battery_btn">Battery (No restrictions)</string>
+    <string name="xiaomi_recents_btn">Lock app in Recents</string>
+    <string name="xiaomi_recents_dialog_title">How to lock in Recents</string>
+    <string name="xiaomi_recents_dialog_body">1. Open Recent Apps (swipe up and hold).\n2. Long press SlipSync app preview.\n3. Tap the padlock icon to lock.\nThis prevents HyperOS memory cleaner from killing background triggers.</string>
+
+    <!-- Setup & Onboarding -->
+    <string name="onboarding_step_1">Permissions</string>
+    <string name="onboarding_step_2">Web App</string>
+    <string name="onboarding_step_3">Folders</string>
+    <string name="onboarding_step_4">HyperOS</string>
+    <string name="onboarding_step_5">Verify</string>
+    <string name="url_label">Google Apps Script Web App URL</string>
+    <string name="token_label">Security Token</string>
+    <string name="test_connection_success">Connection successful! Endpoint is online.</string>
+    <string name="test_connection_failed">Connection failed: %1$s</string>
+    <string name="network_mode_title">Network Mode</string>
+    <string name="network_mode_any">Any network (Wi-Fi or Mobile Data)</string>
+    <string name="network_mode_wifi_only">Wi-Fi only</string>
+    <string name="bank_folders_detected">Detected bank folders</string>
+    <string name="other_folders">Other folders</string>
+
+    <!-- Detail screen -->
+    <string name="detail_title">Slip details</string>
+    <string name="detail_timeline_detected">Detected on device</string>
+    <string name="detail_timeline_qr_ok">QR Code payload extracted</string>
+    <string name="detail_timeline_qr_none">No QR found (SHA-256 fallback)</string>
+    <string name="detail_timeline_uploaded">Uploaded to Google Drive</string>
+    <string name="detail_sha256">SHA-256 Hash</string>
+    <string name="detail_qr_payload">QR Payload</string>
+    <string name="detail_folder">Source folder</string>
+    <string name="detail_file_name">Cloud file name</string>
+    <string name="detail_time">Timestamp</string>
+
+    <!-- Health checks -->
+    <string name="health_check_title">System Health Checks</string>
+    <string name="check_storage_title">Full storage permission</string>
+    <string name="check_url_title">Web App URL configured</string>
+    <string name="check_token_title">Security token configured</string>
+    <string name="check_network_title">Internet connectivity</string>
+    <string name="check_battery_title">Battery optimization disabled</string>
+    <string name="check_worker_title">WorkManager background trigger</string>
+
+    <!-- Language -->
+    <string name="language_title">Language</string>
+    <string name="lang_thai">ไทย (Thai)</string>
+    <string name="lang_english">English</string>
+</resources>

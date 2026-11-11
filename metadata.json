@@ -1,0 +1,6 @@
+{
+  "name": "SlipSync",
+  "description": "Auto-upload Thai banking slips to Google Drive Slips/Inbox with offline QR reading, deduplication, and Google Sheet ledger for Gemini processing.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

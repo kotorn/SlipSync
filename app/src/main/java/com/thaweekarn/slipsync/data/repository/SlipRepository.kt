@@ -10,6 +10,7 @@ import com.thaweekarn.slipsync.data.remote.SlipUploadApi
 import com.thaweekarn.slipsync.util.FileUtils
 import com.thaweekarn.slipsync.util.HashUtils
 import com.thaweekarn.slipsync.util.QrScannerHelper
+import com.thaweekarn.slipsync.util.ThaiSlipQrParser
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.withContext
@@ -59,16 +60,18 @@ class SlipRepository(
 
     /**
      * Queues an image shared to the app via ACTION_SEND.
-     * Copies the stream to private cache first, computes hash, scans QR, and inserts into Room.
+     * Copies the stream to durable private storage (filesDir/shared_slips), computes SHA-256,
+     * scans QR code, validates BOT / PromptPay format, and enqueues to Room as PENDING.
      */
     suspend fun queueSharedImage(sourceUri: Uri): Result<SlipEntity> = withContext(Dispatchers.IO) {
         try {
-            val cachedFile = FileUtils.copyStreamToPrivateCache(context, sourceUri)
+            val durablePair = FileUtils.copyStreamToDurableStorage(context, sourceUri)
                 ?: return@withContext Result.failure(Exception("Could not read shared image stream"))
 
-            val sha256 = FileInputStream(cachedFile).use { HashUtils.calculateSha256(it) }
+            val (durableFile, mimeType) = durablePair
+            val sha256 = FileInputStream(durableFile).use { HashUtils.calculateSha256(it) }
 
-            // Check if already exists in Room
+            // Check if already recorded in Room
             val existing = slipDao.getSlipBySha256(sha256)
             if (existing != null) {
                 if (existing.isSuccess) {
@@ -76,24 +79,28 @@ class SlipRepository(
                 }
             }
 
-            val qrPayload = QrScannerHelper.scanQrFromFile(context, cachedFile)
-            val hasQr = !qrPayload.isNullOrBlank()
+            val qrPayload = QrScannerHelper.scanQrFromFile(context, durableFile)
+            val qrAnalysis = ThaiSlipQrParser.analyze(qrPayload)
             val now = System.currentTimeMillis()
-            val fileName = FileUtils.generateFileName(now, "Shared", sha256, "jpg")
+            val ext = FileUtils.extractExtension(durableFile.name, mimeType)
+            val fileName = FileUtils.generateFileName(now, "Shared", sha256, ext)
 
             val entity = SlipEntity(
                 sha256 = sha256,
-                mediaStoreId = System.currentTimeMillis(), // Generated identifier for shared items
+                mediaStoreId = now, // Identifier fallback for shared items
                 slipQr = qrPayload,
-                hasQr = hasQr,
+                hasQr = qrAnalysis.isValidBankQr,
                 fileName = fileName,
-                mimeType = "image/jpeg",
-                extension = "jpg",
+                mimeType = mimeType,
+                extension = ext,
                 sourceFolder = "Shared/External",
                 status = SlipEntity.STATUS_PENDING,
                 attempts = 0,
                 lastError = null,
-                takenAt = now
+                takenAt = now,
+                localFilePath = durableFile.absolutePath,
+                contentUriString = sourceUri.toString(),
+                normalizedTransactionId = qrAnalysis.normalizedTransactionId
             )
 
             slipDao.insertOrUpdate(entity)

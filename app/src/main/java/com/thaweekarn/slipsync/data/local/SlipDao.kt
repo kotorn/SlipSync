@@ -25,8 +25,27 @@ interface SlipDao {
     @Query("SELECT * FROM slips WHERE slipQr = :slipQr AND (status = 'UPLOADED' OR status = 'UPLOADED_NO_QR') LIMIT 1")
     suspend fun getUploadedSlipByQr(slipQr: String): SlipEntity?
 
+    @Query("SELECT * FROM slips WHERE normalizedTransactionId = :txId AND (status = 'UPLOADED' OR status = 'UPLOADED_NO_QR') LIMIT 1")
+    suspend fun getUploadedSlipByTransactionId(txId: String): SlipEntity?
+
     @Query("SELECT * FROM slips WHERE status = 'PENDING' OR status = 'FAILED' ORDER BY takenAt ASC")
     suspend fun getPendingOrFailedSlips(): List<SlipEntity>
+
+    /**
+     * Retrieves queue items eligible for upload:
+     * - PENDING items
+     * - Expired UPLOADING items where uploadLeaseUntil < now (worker crash or timeout)
+     * - FAILED items where attempts < 5
+     */
+    @Query("""
+        SELECT * FROM slips 
+        WHERE status = 'PENDING' 
+           OR (status = 'UPLOADING' AND uploadLeaseUntil < :now)
+           OR (status = 'FAILED' AND attempts < 5)
+        ORDER BY takenAt ASC 
+        LIMIT :limit
+    """)
+    suspend fun getEligibleUploads(now: Long, limit: Int = 25): List<SlipEntity>
 
     @Query("SELECT COUNT(*) FROM slips WHERE (status = 'UPLOADED' OR status = 'UPLOADED_NO_QR') AND uploadedAt >= :startOfDayMs")
     fun getUploadedCountToday(startOfDayMs: Long): Flow<Int>
@@ -47,13 +66,34 @@ interface SlipDao {
     suspend fun update(slip: SlipEntity)
 
     /**
-     * Resets any lingering UPLOADING rows back to PENDING.
-     * Invoked at the start of SlipUploadWorker to recover from sudden process death or crashes.
+     * Acquires a lease on an item for a specific worker run.
+     * Returns 1 if successfully leased, 0 otherwise.
      */
-    @Query("UPDATE slips SET status = 'PENDING' WHERE status = 'UPLOADING'")
-    suspend fun resetUploadingToPending(): Int
+    @Query("""
+        UPDATE slips 
+        SET status = 'UPLOADING', uploadLeaseUntil = :leaseUntil, workerRunId = :workerId 
+        WHERE sha256 = :sha256 
+          AND (status = 'PENDING' OR (status = 'UPLOADING' AND uploadLeaseUntil < :now) OR status = 'FAILED')
+    """)
+    suspend fun acquireLease(sha256: String, leaseUntil: Long, workerId: String, now: Long): Int
 
-    @Query("UPDATE slips SET status = :status, attempts = :attempts, lastError = :lastError, uploadedAt = :uploadedAt, driveFileId = :driveFileId WHERE sha256 = :sha256")
+    /**
+     * Resets expired UPLOADING leases back to PENDING.
+     */
+    @Query("UPDATE slips SET status = 'PENDING', uploadLeaseUntil = 0, workerRunId = null WHERE status = 'UPLOADING' AND uploadLeaseUntil < :now")
+    suspend fun resetExpiredLeases(now: Long): Int
+
+    @Query("""
+        UPDATE slips 
+        SET status = :status, 
+            attempts = :attempts, 
+            lastError = :lastError, 
+            uploadedAt = :uploadedAt, 
+            driveFileId = :driveFileId,
+            uploadLeaseUntil = 0,
+            workerRunId = null
+        WHERE sha256 = :sha256
+    """)
     suspend fun updateUploadResult(
         sha256: String,
         status: String,
@@ -63,12 +103,12 @@ interface SlipDao {
         driveFileId: String?
     )
 
-    @Query("UPDATE slips SET status = 'SKIPPED_IGNORED' WHERE sha256 = :sha256")
+    @Query("UPDATE slips SET status = 'SKIPPED_IGNORED', uploadLeaseUntil = 0, workerRunId = null WHERE sha256 = :sha256")
     suspend fun ignoreSlip(sha256: String)
 
-    @Query("UPDATE slips SET status = 'PENDING', attempts = 0, lastError = null WHERE sha256 = :sha256")
+    @Query("UPDATE slips SET status = 'PENDING', attempts = 0, lastError = null, uploadLeaseUntil = 0, workerRunId = null WHERE sha256 = :sha256")
     suspend fun unignoreSlip(sha256: String)
 
-    @Query("UPDATE slips SET status = 'PENDING', attempts = 0, lastError = null WHERE sha256 = :sha256")
+    @Query("UPDATE slips SET status = 'PENDING', attempts = 0, lastError = null, uploadLeaseUntil = 0, workerRunId = null WHERE sha256 = :sha256")
     suspend fun retrySlip(sha256: String)
 }

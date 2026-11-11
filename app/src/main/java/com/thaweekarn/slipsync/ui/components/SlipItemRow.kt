@@ -134,10 +134,10 @@ private fun SlipCardContent(
     onClick: () -> Unit
 ) {
     val context = LocalContext.current
-    val imageUri = ContentUris.withAppendedId(
-        MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
-        slip.mediaStoreId
-    )
+    val imageModel = androidx.compose.runtime.remember(slip.localFilePath, slip.mediaStoreId) {
+        slip.localFilePath?.let { java.io.File(it) }?.takeIf { it.exists() }
+            ?: ContentUris.withAppendedId(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, slip.mediaStoreId)
+    }
 
     val dateFormat = SimpleDateFormat("HH:mm:ss • dd/MM", Locale.getDefault())
     val dateStr = dateFormat.format(Date(slip.takenAt))
@@ -158,7 +158,7 @@ private fun SlipCardContent(
             // Thumbnail with fallback
             AsyncImage(
                 model = ImageRequest.Builder(context)
-                    .data(imageUri)
+                    .data(imageModel)
                     .crossfade(true)
                     .build(),
                 contentDescription = null,

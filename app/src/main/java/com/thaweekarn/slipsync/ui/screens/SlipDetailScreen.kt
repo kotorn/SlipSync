@@ -116,10 +116,10 @@ fun SlipDetailScreen(
             }
         } else {
             val item = slip!!
-            val imageUri = ContentUris.withAppendedId(
-                MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
-                item.mediaStoreId
-            )
+            val imageModel = androidx.compose.runtime.remember(item.localFilePath, item.mediaStoreId) {
+                item.localFilePath?.let { java.io.File(it) }?.takeIf { it.exists() }
+                    ?: ContentUris.withAppendedId(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, item.mediaStoreId)
+            }
 
             Column(
                 modifier = Modifier
@@ -139,7 +139,7 @@ fun SlipDetailScreen(
                 ) {
                     AsyncImage(
                         model = ImageRequest.Builder(context)
-                            .data(imageUri)
+                            .data(imageModel)
                             .crossfade(true)
                             .build(),
                         contentDescription = "Slip Image Preview",

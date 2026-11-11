@@ -7,6 +7,7 @@ import android.os.Build
 import android.provider.MediaStore
 import android.util.Base64
 import java.io.File
+import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.io.InputStream
 import java.text.SimpleDateFormat
@@ -87,17 +88,16 @@ object FileUtils {
     fun normalizeFolderPath(path: String): String {
         var clean = path.replace("\\", "/").trim()
         if (clean.contains("/storage/") || clean.startsWith("/")) {
-            // Extract from standard root (e.g., /storage/emulated/0/Pictures/KPLUS/ -> Pictures/KPLUS/)
             val index0 = clean.indexOf("/0/")
-            if (index0 != -1) {
-                clean = clean.substring(index0 + 3)
+            clean = if (index0 != -1) {
+                clean.substring(index0 + 3)
             } else {
                 val parts = clean.split("/")
                 val lastDirs = parts.filter { it.isNotBlank() && !it.contains("storage") && !it.contains("emulated") }
-                clean = lastDirs.joinToString("/")
+                lastDirs.joinToString("/")
             }
         }
-        // If it's a file path, remove file name
+        // Remove trailing file name if a full path was passed
         if (clean.endsWith(".jpg") || clean.endsWith(".jpeg") || clean.endsWith(".png") || clean.endsWith(".webp")) {
             val lastSlash = clean.lastIndexOf('/')
             clean = if (lastSlash != -1) clean.substring(0, lastSlash + 1) else ""
@@ -106,6 +106,16 @@ object FileUtils {
             clean += "/"
         }
         return clean
+    }
+
+    /**
+     * Checks if image folder matches user-selected monitored folder strictly.
+     * Prevents "Pictures/KPLUS/" from matching "Pictures/KPLUS_BACKUP/".
+     */
+    fun isFolderMatched(imageFolder: String, monitoredFolder: String): Boolean {
+        val normImg = normalizeFolderPath(imageFolder).lowercase()
+        val normMon = normalizeFolderPath(monitoredFolder).lowercase()
+        return normImg == normMon || normImg.startsWith(normMon)
     }
 
     /**
@@ -135,7 +145,6 @@ object FileUtils {
             projection.add(MediaStore.Images.Media.DATA)
         }
 
-        // Exclude pending images on API 29+
         val selection = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             "${MediaStore.Images.Media.IS_PENDING} = 0"
         } else {
@@ -172,17 +181,14 @@ object FileUtils {
                     val rawPath = cursor.getString(pathCol) ?: ""
                     val normalizedFolder = normalizeFolderPath(rawPath)
 
-                    // Check if this image belongs to one of the selected folders
                     val matchedFolder = selectedFolders.firstOrNull { folder ->
-                        normalizedFolder.startsWith(folder, ignoreCase = true) ||
-                                folder.startsWith(normalizedFolder, ignoreCase = true)
+                        isFolderMatched(normalizedFolder, folder)
                     }
 
                     if (matchedFolder != null) {
                         val activationTimeMs = folderActivationTimestamps[matchedFolder] ?: 0L
                         val dateAddedMs = dateAddedSec * 1000L
 
-                        // Only consider images added after folder activation / backfill cutoff
                         if (dateAddedMs >= activationTimeMs) {
                             val contentUri = ContentUris.withAppendedId(
                                 MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
@@ -211,25 +217,35 @@ object FileUtils {
     }
 
     /**
-     * Reads image content, verifies size <= 10MB, and encodes to Base64.
+     * Reads image content from a Content URI or local File, checks size limit, and encodes to Base64.
      */
-    fun readImageAsBase64(context: Context, uri: Uri): Pair<String, Long>? {
+    fun readImageAsBase64(context: Context, uri: Uri?, file: File?): Pair<String, Long>? {
         return try {
-            context.contentResolver.openInputStream(uri)?.use { inputStream ->
-                val bytes = inputStream.readBytes()
-                if (bytes.size > MAX_FILE_SIZE_BYTES) {
-                    return null // Exceeds 10 MB limit
+            val bytes = when {
+                file != null && file.exists() -> {
+                    if (file.length() > MAX_FILE_SIZE_BYTES) return null
+                    FileInputStream(file).use { it.readBytes() }
                 }
-                val base64 = Base64.encodeToString(bytes, Base64.NO_WRAP)
-                Pair(base64, bytes.size.toLong())
+                uri != null -> {
+                    context.contentResolver.openInputStream(uri)?.use { inputStream ->
+                        val b = inputStream.readBytes()
+                        if (b.size > MAX_FILE_SIZE_BYTES) return null
+                        b
+                    } ?: return null
+                }
+                else -> return null
             }
+
+            if (bytes.size > MAX_FILE_SIZE_BYTES) return null
+            val base64 = Base64.encodeToString(bytes, Base64.NO_WRAP)
+            Pair(base64, bytes.size.toLong())
         } catch (e: Exception) {
             null
         }
     }
 
     /**
-     * Extracts the extension from the original file name or MIME type.
+     * Extracts extension from fileName or MIME type cleanly.
      */
     fun extractExtension(fileName: String, mimeType: String): String {
         val dotIndex = fileName.lastIndexOf('.')
@@ -263,21 +279,32 @@ object FileUtils {
     }
 
     /**
-     * Copies a shared stream from an external content URI into private cache storage.
-     * Prevents security exceptions or revoked permission issues.
+     * Copies a shared stream from an external content URI into durable app-private storage (filesDir).
+     * Unlike cacheDir, filesDir is NEVER purged by OS cache cleaners.
      */
-    fun copyStreamToPrivateCache(context: Context, sourceUri: Uri): File? {
+    fun copyStreamToDurableStorage(context: Context, sourceUri: Uri): Pair<File, String>? {
         return try {
-            val cacheDir = File(context.cacheDir, "shared_slips")
-            if (!cacheDir.exists()) cacheDir.mkdirs()
+            val durableDir = File(context.filesDir, "shared_slips")
+            if (!durableDir.exists()) durableDir.mkdirs()
 
-            val tempFile = File(cacheDir, "shared_${System.currentTimeMillis()}_${(1000..9999).random()}.jpg")
+            // Resolve real MIME type if available
+            val mimeType = context.contentResolver.getType(sourceUri) ?: "image/jpeg"
+            val ext = when (mimeType.lowercase()) {
+                "image/png" -> "png"
+                "image/webp" -> "webp"
+                else -> "jpg"
+            }
+
+            val durableFile = File(durableDir, "shared_${System.currentTimeMillis()}_${(1000..9999).random()}.$ext")
             context.contentResolver.openInputStream(sourceUri)?.use { input ->
-                FileOutputStream(tempFile).use { output ->
+                FileOutputStream(durableFile).use { output ->
                     input.copyTo(output)
                 }
             }
-            if (tempFile.exists() && tempFile.length() > 0) tempFile else null
+
+            if (durableFile.exists() && durableFile.length() > 0) {
+                Pair(durableFile, mimeType)
+            } else null
         } catch (e: Exception) {
             e.printStackTrace()
             null

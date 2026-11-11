@@ -11,6 +11,7 @@ import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import com.thaweekarn.slipsync.util.CryptoManager
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.first
@@ -24,13 +25,21 @@ class SlipPreferencesRepository(private val context: Context) {
 
     private object PreferencesKeys {
         val WEB_APP_URL = stringPreferencesKey("web_app_url")
-        val AUTH_TOKEN = stringPreferencesKey("auth_token")
+        val LEGACY_AUTH_TOKEN = stringPreferencesKey("auth_token")
+        val ENCRYPTED_AUTH_TOKEN = stringPreferencesKey("encrypted_auth_token")
         val WIFI_ONLY = booleanPreferencesKey("wifi_only")
         val SELECTED_FOLDERS = stringSetPreferencesKey("selected_folders")
         val FOLDER_ACTIVATIONS_JSON = stringPreferencesKey("folder_activations_json")
         val BACKFILL_DAYS = intPreferencesKey("backfill_days")
+        
+        // Granular health & sync tracking
         val LAST_SYNC_TIMESTAMP = longPreferencesKey("last_sync_timestamp")
         val LAST_SUCCESSFUL_RUN = longPreferencesKey("last_successful_run")
+        val LAST_SCAN_TIMESTAMP = longPreferencesKey("last_scan_timestamp")
+        val LAST_SUCCESSFUL_UPLOAD = longPreferencesKey("last_successful_upload")
+        val LAST_SERVER_ERROR = stringPreferencesKey("last_server_error")
+        val LAST_SERVER_STATUS_CODE = intPreferencesKey("last_server_status_code")
+
         val PAUSE_UNTIL_TIMESTAMP = longPreferencesKey("pause_until_timestamp")
         val ONBOARDING_COMPLETED = booleanPreferencesKey("onboarding_completed")
         val USER_CONFIRMED_AUTOSTART = booleanPreferencesKey("user_confirmed_autostart")
@@ -44,9 +53,26 @@ class SlipPreferencesRepository(private val context: Context) {
         .catch { if (it is IOException) emit(emptyPreferences()) else throw it }
         .map { it[PreferencesKeys.WEB_APP_URL] ?: "" }
 
+    /**
+     * Retrieves decrypted token from Keystore storage with transparent migration from plain text.
+     */
     val authToken: Flow<String> = dataStore.data
         .catch { if (it is IOException) emit(emptyPreferences()) else throw it }
-        .map { it[PreferencesKeys.AUTH_TOKEN] ?: "" }
+        .map { prefs ->
+            val encrypted = prefs[PreferencesKeys.ENCRYPTED_AUTH_TOKEN]
+            if (!encrypted.isNullOrBlank()) {
+                val decrypted = CryptoManager.decrypt(encrypted)
+                if (decrypted.isNotBlank()) decrypted else ""
+            } else {
+                // Check legacy plain token for migration
+                val legacy = prefs[PreferencesKeys.LEGACY_AUTH_TOKEN] ?: ""
+                if (legacy.isNotBlank()) {
+                    // Transparently trigger migration asynchronously
+                    migrateLegacyToken(legacy)
+                    legacy
+                } else ""
+            }
+        }
 
     val wifiOnly: Flow<Boolean> = dataStore.data
         .catch { if (it is IOException) emit(emptyPreferences()) else throw it }
@@ -67,6 +93,18 @@ class SlipPreferencesRepository(private val context: Context) {
     val lastSuccessfulRun: Flow<Long> = dataStore.data
         .catch { if (it is IOException) emit(emptyPreferences()) else throw it }
         .map { it[PreferencesKeys.LAST_SUCCESSFUL_RUN] ?: 0L }
+
+    val lastScanTimestamp: Flow<Long> = dataStore.data
+        .catch { if (it is IOException) emit(emptyPreferences()) else throw it }
+        .map { it[PreferencesKeys.LAST_SCAN_TIMESTAMP] ?: 0L }
+
+    val lastSuccessfulUpload: Flow<Long> = dataStore.data
+        .catch { if (it is IOException) emit(emptyPreferences()) else throw it }
+        .map { it[PreferencesKeys.LAST_SUCCESSFUL_UPLOAD] ?: 0L }
+
+    val lastServerError: Flow<String> = dataStore.data
+        .catch { if (it is IOException) emit(emptyPreferences()) else throw it }
+        .map { it[PreferencesKeys.LAST_SERVER_ERROR] ?: "" }
 
     val pauseUntilTimestamp: Flow<Long> = dataStore.data
         .catch { if (it is IOException) emit(emptyPreferences()) else throw it }
@@ -92,8 +130,31 @@ class SlipPreferencesRepository(private val context: Context) {
         dataStore.edit { it[PreferencesKeys.WEB_APP_URL] = url.trim() }
     }
 
+    /**
+     * Encrypts and securely stores auth token via Keystore.
+     */
     suspend fun setAuthToken(token: String) {
-        dataStore.edit { it[PreferencesKeys.AUTH_TOKEN] = token.trim() }
+        val trimmed = token.trim()
+        val encrypted = if (trimmed.isNotBlank()) CryptoManager.encrypt(trimmed) else ""
+        dataStore.edit { prefs ->
+            prefs[PreferencesKeys.ENCRYPTED_AUTH_TOKEN] = encrypted
+            // Clean legacy plaintext token
+            prefs.remove(PreferencesKeys.LEGACY_AUTH_TOKEN)
+        }
+    }
+
+    private suspend fun migrateLegacyToken(legacyToken: String) {
+        try {
+            val encrypted = CryptoManager.encrypt(legacyToken)
+            if (encrypted.isNotBlank()) {
+                dataStore.edit { prefs ->
+                    prefs[PreferencesKeys.ENCRYPTED_AUTH_TOKEN] = encrypted
+                    prefs.remove(PreferencesKeys.LEGACY_AUTH_TOKEN)
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
     }
 
     suspend fun setWifiOnly(enabled: Boolean) {
@@ -106,7 +167,6 @@ class SlipPreferencesRepository(private val context: Context) {
             val oldFolders = prefs[PreferencesKeys.SELECTED_FOLDERS] ?: emptySet()
             prefs[PreferencesKeys.SELECTED_FOLDERS] = folders
 
-            // Update activation timestamps for any newly added folders
             val currentMap = parseFolderActivations(prefs[PreferencesKeys.FOLDER_ACTIVATIONS_JSON])
             for (f in folders) {
                 if (!oldFolders.contains(f) && !currentMap.containsKey(f)) {
@@ -121,9 +181,6 @@ class SlipPreferencesRepository(private val context: Context) {
         dataStore.edit { it[PreferencesKeys.BACKFILL_DAYS] = days }
     }
 
-    /**
-     * Applies a backfill range for selected folders by moving their activation timestamp back in time.
-     */
     suspend fun applyBackfillForFolders(days: Int) {
         val cutoffMs = System.currentTimeMillis() - (days * 24L * 60L * 60L * 1000L)
         dataStore.edit { prefs ->
@@ -149,6 +206,30 @@ class SlipPreferencesRepository(private val context: Context) {
 
     suspend fun setLastSuccessfulRun(timestamp: Long) {
         dataStore.edit { it[PreferencesKeys.LAST_SUCCESSFUL_RUN] = timestamp }
+    }
+
+    suspend fun setLastScanTimestamp(timestamp: Long) {
+        dataStore.edit { it[PreferencesKeys.LAST_SCAN_TIMESTAMP] = timestamp }
+    }
+
+    suspend fun setLastSuccessfulUpload(timestamp: Long) {
+        dataStore.edit { it[PreferencesKeys.LAST_SUCCESSFUL_UPLOAD] = timestamp }
+    }
+
+    suspend fun setLastServerError(error: String, statusCode: Int = 0) {
+        dataStore.edit {
+            it[PreferencesKeys.LAST_SERVER_ERROR] = error
+            it[PreferencesKeys.LAST_SERVER_STATUS_CODE] = statusCode
+        }
+    }
+
+    suspend fun recordServerStatus(error: String?, statusCode: Int = 0) {
+        if (error.isNullOrBlank()) {
+            setLastSuccessfulUpload(System.currentTimeMillis())
+            setLastServerError("", statusCode)
+        } else {
+            setLastServerError(error, statusCode)
+        }
     }
 
     suspend fun setPauseUntil(timestamp: Long) {

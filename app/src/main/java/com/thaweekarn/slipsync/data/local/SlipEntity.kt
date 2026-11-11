@@ -14,7 +14,8 @@ import androidx.room.PrimaryKey
         Index(value = ["slipQr"]),
         Index(value = ["mediaStoreId"]),
         Index(value = ["status"]),
-        Index(value = ["takenAt"])
+        Index(value = ["takenAt"]),
+        Index(value = ["normalizedTransactionId"])
     ]
 )
 data class SlipEntity(
@@ -33,7 +34,12 @@ data class SlipEntity(
     val takenAt: Long,
     val uploadedAt: Long? = null,
     val driveFileId: String? = null,
-    val userNote: String? = null // V2 readiness
+    val userNote: String? = null, // V2 readiness
+    val localFilePath: String? = null, // Durable file path for shared slips
+    val contentUriString: String? = null, // Optional URI string
+    val normalizedTransactionId: String? = null, // Extracted BOT / PromptPay transaction ref
+    val uploadLeaseUntil: Long = 0L, // Concurrency lease expiration timestamp
+    val workerRunId: String? = null // Worker identifier holding the lease
 ) {
     companion object {
         const val STATUS_PENDING = "PENDING"

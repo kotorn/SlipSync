@@ -118,4 +118,30 @@ class AuthRepository(
         _currentUser.value = null
         preferencesRepository.setGoogleDriveAutoConnected(false)
     }
+
+    suspend fun getUserProfile(userId: String): Map<String, Any?>? = withContext(Dispatchers.IO) {
+        try {
+            val databaseId = context.getString(R.string.firestore_database_id)
+            val db = FirebaseFirestore.getInstance(FirebaseApp.getInstance(), databaseId)
+            val doc = db.collection("users").document(userId).get().await()
+            if (doc.exists()) doc.data else null
+        } catch (e: Exception) {
+            Log.w("AuthRepository", "Failed to fetch user profile from Firestore: ${e.message}")
+            null
+        }
+    }
+
+    suspend fun updateDriveFolderName(userId: String, folderName: String): Boolean = withContext(Dispatchers.IO) {
+        try {
+            val databaseId = context.getString(R.string.firestore_database_id)
+            val db = FirebaseFirestore.getInstance(FirebaseApp.getInstance(), databaseId)
+            db.collection("users").document(userId)
+                .set(mapOf("driveFolderName" to folderName), SetOptions.merge())
+                .await()
+            true
+        } catch (e: Exception) {
+            Log.w("AuthRepository", "Failed to update drive folder name in Firestore: ${e.message}")
+            false
+        }
+    }
 }

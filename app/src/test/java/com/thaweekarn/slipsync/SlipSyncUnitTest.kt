@@ -38,6 +38,15 @@ class SlipSyncUnitTest {
         testDb = Room.inMemoryDatabaseBuilder(context, SlipDatabase::class.java)
             .allowMainThreadQueries()
             .build()
+
+        if (com.google.firebase.FirebaseApp.getApps(context).isEmpty()) {
+            val options = com.google.firebase.FirebaseOptions.Builder()
+                .setApplicationId("1:192118165010:android:694f4c45b8cf650b")
+                .setProjectId("gen-lang-client-0144038290")
+                .setApiKey("test-api-key")
+                .build()
+            com.google.firebase.FirebaseApp.initializeApp(context, options)
+        }
     }
 
     @After
@@ -300,5 +309,27 @@ class SlipSyncUnitTest {
         assertNotNull(tokenCheck)
         assertEquals(com.thaweekarn.slipsync.data.repository.HealthStatus.PASS, tokenCheck?.status)
         assertTrue(tokenCheck?.description?.contains("Google") == true)
+    }
+
+    // FEATURE: LoginScreen & LoginViewModel
+    @Test
+    fun testLoginViewModelInitialState() {
+        val app = ApplicationProvider.getApplicationContext<android.app.Application>()
+        val loginVm = com.thaweekarn.slipsync.ui.viewmodel.LoginViewModel(app)
+        val state = loginVm.uiState.value
+
+        assertFalse(state.isSigningIn)
+        assertFalse(state.isSavingFolder)
+        assertEquals("Slips/Inbox", state.driveFolderName)
+        assertNull(state.authErrorMessage)
+    }
+
+    @Test
+    fun testLoginViewModelClearMessages() {
+        val app = ApplicationProvider.getApplicationContext<android.app.Application>()
+        val loginVm = com.thaweekarn.slipsync.ui.viewmodel.LoginViewModel(app)
+        loginVm.clearMessages()
+        assertNull(loginVm.uiState.value.authErrorMessage)
+        assertNull(loginVm.uiState.value.successMessage)
     }
 }

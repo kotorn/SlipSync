@@ -20,17 +20,20 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.thaweekarn.slipsync.data.preferences.SlipPreferencesRepository
 import com.thaweekarn.slipsync.ui.screens.HealthCheckScreen
 import com.thaweekarn.slipsync.ui.screens.HomeScreen
+import com.thaweekarn.slipsync.ui.screens.LoginScreen
 import com.thaweekarn.slipsync.ui.screens.OnboardingScreen
 import com.thaweekarn.slipsync.ui.screens.SettingsScreen
 import com.thaweekarn.slipsync.ui.screens.SlipDetailScreen
 import com.thaweekarn.slipsync.ui.theme.SlipSyncTheme
 import com.thaweekarn.slipsync.ui.viewmodel.DetailViewModel
 import com.thaweekarn.slipsync.ui.viewmodel.HomeViewModel
+import com.thaweekarn.slipsync.ui.viewmodel.LoginViewModel
 import com.thaweekarn.slipsync.ui.viewmodel.OnboardingViewModel
 import com.thaweekarn.slipsync.ui.viewmodel.SettingsViewModel
 
 sealed class Screen {
     data object Onboarding : Screen()
+    data object Login : Screen()
     data object Home : Screen()
     data class Detail(val sha256: String) : Screen()
     data object Settings : Screen()
@@ -43,6 +46,7 @@ class MainActivity : ComponentActivity() {
     private val onboardingViewModel: OnboardingViewModel by viewModels()
     private val detailViewModel: DetailViewModel by viewModels()
     private val settingsViewModel: SettingsViewModel by viewModels()
+    private val loginViewModel: LoginViewModel by viewModels()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -58,7 +62,8 @@ class MainActivity : ComponentActivity() {
                         homeViewModel = homeViewModel,
                         onboardingViewModel = onboardingViewModel,
                         detailViewModel = detailViewModel,
-                        settingsViewModel = settingsViewModel
+                        settingsViewModel = settingsViewModel,
+                        loginViewModel = loginViewModel
                     )
                 }
             }
@@ -71,7 +76,8 @@ fun SlipSyncApp(
     homeViewModel: HomeViewModel,
     onboardingViewModel: OnboardingViewModel,
     detailViewModel: DetailViewModel,
-    settingsViewModel: SettingsViewModel
+    settingsViewModel: SettingsViewModel,
+    loginViewModel: LoginViewModel
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val prefs = remember { SlipPreferencesRepository(context) }
@@ -90,6 +96,16 @@ fun SlipSyncApp(
             OnboardingScreen(
                 viewModel = onboardingViewModel,
                 onFinished = { currentScreen = Screen.Home }
+            )
+        }
+        is Screen.Login -> {
+            BackHandler {
+                currentScreen = Screen.Settings
+            }
+            LoginScreen(
+                viewModel = loginViewModel,
+                onContinue = { currentScreen = Screen.Home },
+                onBack = { currentScreen = Screen.Settings }
             )
         }
         is Screen.Home -> {
@@ -116,6 +132,7 @@ fun SlipSyncApp(
             SettingsScreen(
                 viewModel = settingsViewModel,
                 onNavigateToHealthCheck = { currentScreen = Screen.HealthCheck },
+                onNavigateToLogin = { currentScreen = Screen.Login },
                 onBack = { currentScreen = Screen.Home }
             )
         }

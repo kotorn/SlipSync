@@ -128,4 +128,18 @@
     <string name="auth_cancelled">ยกเลิกการเข้าสู่ระบบ</string>
     <string name="auth_account_title">บัญชี Google</string>
     <string name="auth_or_manual">หรือกำหนดค่า URL Web App ด้วยตนเอง</string>
+
+    <!-- Login Screen -->
+    <string name="login_title">เข้าสู่ระบบ SlipSync</string>
+    <string name="login_subtitle">เชื่อมต่อบัญชี Google Drive เพื่อจัดเก็บสลิปการโอนเงินโดยอัตโนมัติและปลอดภัย</string>
+    <string name="login_feature_1_title">จัดเก็บขึ้นคลาวด์อัตโนมัติ</string>
+    <string name="login_feature_1_desc">ตรวจจับสลิปจากแอปธนาคารไทย (K PLUS, SCB และอื่นๆ) และสำรองขึ้น Google Drive ทันที</string>
+    <string name="login_feature_2_title">สะดวก ไม่ต้องตั้งค่าซับซ้อน</string>
+    <string name="login_feature_2_desc">ลงชื่อเข้าใช้ด้วยบัญชี Gmail ครั้งเดียว ไม่ต้องติดตั้ง Apps Script หรือคัดลอก Token เอง</string>
+    <string name="login_feature_3_title">ปลอดภัยและเป็นส่วนตัว</string>
+    <string name="login_feature_3_desc">สลิปและข้อมูล QR Code ทั้งหมดจะถูกเก็บไว้ใน Google Drive และ Firestore ส่วนตัวของคุณเท่านั้น</string>
+    <string name="login_continue_button">เข้าสู่หน้าหลัก SlipSync</string>
+    <string name="login_skip_button">ใช้งานโดยไม่เชื่อมต่อบัญชี Google (กำหนดค่าเอง)</string>
+    <string name="login_drive_folder_label">โฟลเดอร์ปลายทางบน Drive</string>
+    <string name="login_status_active">เชื่อมต่อ Google Drive สำเร็จและพร้อมใช้งาน</string>
 </resources>

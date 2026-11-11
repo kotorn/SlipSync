@@ -128,4 +128,18 @@
     <string name="auth_cancelled">Sign-in cancelled</string>
     <string name="auth_account_title">Google Account</string>
     <string name="auth_or_manual">Or configure manual Web App</string>
+
+    <!-- Login Screen -->
+    <string name="login_title">Log in to SlipSync</string>
+    <string name="login_subtitle">Link your Google Drive account to archive payment slips automatically and securely.</string>
+    <string name="login_feature_1_title">Automated Cloud Archiving</string>
+    <string name="login_feature_1_desc">Newly saved bank slips from K PLUS, SCB, and other banks are backed up directly to Google Drive.</string>
+    <string name="login_feature_2_title">Zero-Configuration Setup</string>
+    <string name="login_feature_2_desc">Sign in with your Gmail account once. No complex Web App URLs or manual tokens required.</string>
+    <string name="login_feature_3_title">Private and Secure</string>
+    <string name="login_feature_3_desc">All slips and QR data remain strictly in your private Google Drive and Firestore storage.</string>
+    <string name="login_continue_button">Continue to SlipSync</string>
+    <string name="login_skip_button">Use without Google account (Manual setup)</string>
+    <string name="login_drive_folder_label">Target Drive Folder</string>
+    <string name="login_status_active">Google Drive Linked and Active</string>
 </resources>

@@ -119,10 +119,12 @@ This document details the hardening, security improvements, failure mode analysi
 | `testCryptoManagerSecurityPolicy` | Security | Persistent Keystore in prod; clean test runner isolation | **PASS** |
 | `testGoogleDriveAutoConnectionPreference` | Cloud Auth | Persists and exposes Google Drive connection state | **PASS** |
 | `testHealthCheckWithGoogleDriveAutoConnection` | System Health | Recognizes Google Sign-In as valid cloud connection | **PASS** |
+| `testLoginViewModelInitialState` | LoginScreen | Initializes with default state and Slips/Inbox destination | **PASS** |
+| `testLoginViewModelClearMessages` | LoginScreen | Resets error and success banners cleanly | **PASS** |
 
 ### Build & Verification Evidence:
 - **Gradle Compilation**: `compile_applet` PASSED cleanly (`Build succeeded - the applet is compiled`).
-- **Unit & Robolectric Tests**: `gradle :app:testDebugUnitTest` PASSED (13 of 13 tests PASSED, 0 failures, 0 errors).
+- **Unit & Robolectric Tests**: `gradle :app:testDebugUnitTest` PASSED (15 of 15 tests PASSED, 0 failures, 0 errors).
 - **Android Lint**: PASSED (0 fatal errors).
 
 ---

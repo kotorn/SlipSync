@@ -110,6 +110,14 @@ dependencies {
   implementation(libs.okhttp)
   implementation(libs.retrofit)
 
+  // Firebase & Google Sign-In with Credential Manager
+  implementation(platform(libs.firebase.bom))
+  implementation(libs.firebase.auth)
+  implementation(libs.firebase.firestore)
+  implementation(libs.androidx.credentials)
+  implementation(libs.androidx.credentials.play.services)
+  implementation(libs.googleid)
+
   testImplementation(libs.androidx.compose.ui.test.junit4)
   testImplementation(libs.androidx.core)
   testImplementation(libs.androidx.junit)

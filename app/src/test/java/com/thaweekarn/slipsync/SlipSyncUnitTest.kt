@@ -267,4 +267,38 @@ class SlipSyncUnitTest {
         val decrypted = CryptoManager.decrypt(encrypted)
         assertEquals(secretToken, decrypted)
     }
+
+    // FEATURE: Google Sign-In & Automated Google Drive Connection
+    @Test
+    fun testGoogleDriveAutoConnectionPreference() = runBlocking {
+        val prefs = SlipPreferencesRepository(context)
+        assertFalse(prefs.googleDriveAutoConnected.first())
+
+        prefs.setGoogleDriveAutoConnected(true)
+        assertTrue(prefs.googleDriveAutoConnected.first())
+
+        prefs.setGoogleDriveAutoConnected(false)
+        assertFalse(prefs.googleDriveAutoConnected.first())
+    }
+
+    @Test
+    fun testHealthCheckWithGoogleDriveAutoConnection() = runBlocking {
+        val prefs = SlipPreferencesRepository(context)
+        prefs.setWebAppUrl("")
+        prefs.setAuthToken("")
+        prefs.setGoogleDriveAutoConnected(true)
+
+        val healthRepo = com.thaweekarn.slipsync.data.repository.HealthCheckRepository(context, prefs)
+        val checks = healthRepo.evaluateAllChecks()
+
+        val urlCheck = checks.find { it.id == "url" }
+        assertNotNull(urlCheck)
+        assertEquals(com.thaweekarn.slipsync.data.repository.HealthStatus.PASS, urlCheck?.status)
+        assertTrue(urlCheck?.description?.contains("Google Account") == true)
+
+        val tokenCheck = checks.find { it.id == "token" }
+        assertNotNull(tokenCheck)
+        assertEquals(com.thaweekarn.slipsync.data.repository.HealthStatus.PASS, tokenCheck?.status)
+        assertTrue(tokenCheck?.description?.contains("Google") == true)
+    }
 }

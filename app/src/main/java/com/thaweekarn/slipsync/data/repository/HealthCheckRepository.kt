@@ -46,9 +46,18 @@ class HealthCheckRepository(
         val storageStatus = checkStoragePermission()
         list.add(storageStatus)
 
-        // 2. Web App URL
+        // 2. Web App URL / Google Drive Auto Connection
+        val isDriveAutoConnected = preferencesRepository.googleDriveAutoConnected.first()
         val url = preferencesRepository.webAppUrl.first()
-        val urlStatus = if (url.isNotBlank() && url.startsWith("https://script.google.com/")) {
+        val urlStatus = if (isDriveAutoConnected) {
+            HealthCheckItem(
+                id = "url",
+                titleRes = com.thaweekarn.slipsync.R.string.check_url_title,
+                status = HealthStatus.PASS,
+                description = "Connected via Google Account (Auto Drive)",
+                actionType = HealthActionType.SETTINGS_WEB_APP
+            )
+        } else if (url.isNotBlank() && url.startsWith("https://script.google.com/")) {
             HealthCheckItem(
                 id = "url",
                 titleRes = com.thaweekarn.slipsync.R.string.check_url_title,
@@ -69,7 +78,15 @@ class HealthCheckRepository(
 
         // 3. Security Token
         val token = preferencesRepository.authToken.first()
-        val tokenStatus = if (token.isNotBlank()) {
+        val tokenStatus = if (isDriveAutoConnected) {
+            HealthCheckItem(
+                id = "token",
+                titleRes = com.thaweekarn.slipsync.R.string.check_token_title,
+                status = HealthStatus.PASS,
+                description = "Authenticated via Google Sign-In",
+                actionType = HealthActionType.SETTINGS_TOKEN
+            )
+        } else if (token.isNotBlank()) {
             HealthCheckItem(
                 id = "token",
                 titleRes = com.thaweekarn.slipsync.R.string.check_token_title,

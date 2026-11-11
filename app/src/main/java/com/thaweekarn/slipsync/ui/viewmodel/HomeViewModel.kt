@@ -55,7 +55,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     val isSyncing: StateFlow<Boolean> = _isSyncing.asStateFlow()
 
     private data class Counts(val today: Int, val pending: Int, val failed: Int)
-    private data class Prefs(val lastSync: Long, val url: String)
+    private data class Prefs(val lastSync: Long, val url: String, val isGoogleConnected: Boolean)
 
     private val countsFlow = combine(
         slipRepo.getTodayUploadedCount(),
@@ -65,8 +65,9 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
     private val prefsFlow = combine(
         prefsRepo.lastSyncTimestamp,
-        prefsRepo.webAppUrl
-    ) { lastSync, url -> Prefs(lastSync, url) }
+        prefsRepo.webAppUrl,
+        prefsRepo.googleDriveAutoConnected
+    ) { lastSync, url, googleConnected -> Prefs(lastSync, url, googleConnected) }
 
     val uiState: StateFlow<HomeUiState> = combine(
         slipRepo.recentSlips,
@@ -86,12 +87,13 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         val context = getApplication<Application>()
         val partialAccess = checkPartialAccess(context)
         val hasFullAccess = checkFullAccess(context)
+        val isCloudConfigured = prefs.url.isNotBlank() || prefs.isGoogleConnected
 
         val (hState, hTitle, hDesc, hAction) = evaluateHealth(
             context = context,
             hasFullAccess = hasFullAccess,
             hasPartialAccess = partialAccess,
-            urlConfigured = prefs.url.isNotBlank(),
+            cloudConfigured = isCloudConfigured,
             pendingCount = counts.pending,
             failedCount = counts.failed,
             lastSync = prefs.lastSync
@@ -111,7 +113,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             isSyncing = syncing,
             hasPartialAccess = partialAccess,
             lastSyncTimestamp = prefs.lastSync,
-            webAppConfigured = prefs.url.isNotBlank()
+            webAppConfigured = isCloudConfigured
         )
     }.stateIn(
         scope = viewModelScope,
@@ -184,7 +186,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         context: Context,
         hasFullAccess: Boolean,
         hasPartialAccess: Boolean,
-        urlConfigured: Boolean,
+        cloudConfigured: Boolean,
         pendingCount: Int,
         failedCount: Int,
         lastSync: Long
@@ -196,10 +198,10 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 if (hasPartialAccess) context.getString(R.string.partial_access_title) else "Photo permission required",
                 HealthActionType.PERMISSION_STORAGE
             )
-            !urlConfigured -> Quadruple(
+            !cloudConfigured -> Quadruple(
                 HealthCardState.RED_ACTION_NEEDED,
                 context.getString(R.string.health_action_needed_title),
-                "Google Apps Script Web App URL is not set",
+                "Google Drive / Web App is not connected",
                 HealthActionType.SETTINGS_WEB_APP
             )
             failedCount > 0 -> Quadruple(

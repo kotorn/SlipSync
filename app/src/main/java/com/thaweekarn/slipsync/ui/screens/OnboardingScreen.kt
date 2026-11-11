@@ -80,6 +80,11 @@ import com.thaweekarn.slipsync.ui.viewmodel.OnboardingUiState
 import com.thaweekarn.slipsync.ui.viewmodel.OnboardingViewModel
 import com.thaweekarn.slipsync.util.XiaomiIntentHelper
 
+import androidx.compose.material.icons.filled.AccountCircle
+import androidx.compose.material.icons.filled.CloudDone
+import androidx.compose.material.icons.filled.Login
+import coil.compose.AsyncImage
+
 @Composable
 fun OnboardingScreen(
     viewModel: OnboardingViewModel,
@@ -99,7 +104,7 @@ fun OnboardingScreen(
                 currentStep = state.currentStep,
                 canProceed = when (state.currentStep) {
                     1 -> hasPhotoAccess(context)
-                    2 -> state.webAppUrl.isNotBlank() && state.authToken.isNotBlank()
+                    2 -> state.isGoogleDriveConnected || (state.webAppUrl.isNotBlank() && state.authToken.isNotBlank())
                     3 -> state.selectedFolders.isNotEmpty()
                     4 -> true
                     5 -> true
@@ -251,89 +256,218 @@ private fun Step1Permissions(context: Context) {
 @Composable
 private fun Step2WebApp(viewModel: OnboardingViewModel, state: OnboardingUiState) {
     var tokenVisible by remember { mutableStateOf(false) }
+    var showManualSetup by remember { mutableStateOf(false) }
+    val context = LocalContext.current
 
     Column(modifier = Modifier.fillMaxSize()) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Icon(Icons.Default.CloudUpload, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(32.dp))
             Spacer(modifier = Modifier.width(12.dp))
             Column {
-                Text("ขั้นตอนที่ 2: ตั้งค่า Web App", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                Text("Step 2: Google Apps Script Receiver", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("ขั้นตอนที่ 2: เชื่อมต่อ Google Drive", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                Text("Step 2: Connect Google Drive Storage", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        OutlinedTextField(
-            value = state.webAppUrl,
-            onValueChange = { viewModel.setWebAppUrl(it) },
-            label = { Text(stringResource(R.string.url_label)) },
-            placeholder = { Text("https://script.google.com/macros/s/.../exec") },
-            leadingIcon = { Icon(Icons.Default.Link, contentDescription = null) },
-            singleLine = true,
+        // Option A: 1-Tap Google Sign-In (Recommended)
+        Card(
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = if (state.isGoogleDriveConnected) StatusGreen.copy(alpha = 0.12f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+            ),
             modifier = Modifier.fillMaxWidth()
-        )
-
-        Spacer(modifier = Modifier.height(12.dp))
-
-        OutlinedTextField(
-            value = state.authToken,
-            onValueChange = { viewModel.setAuthToken(it) },
-            label = { Text(stringResource(R.string.token_label)) },
-            leadingIcon = { Icon(Icons.Default.Key, contentDescription = null) },
-            trailingIcon = {
-                IconButton(onClick = { tokenVisible = !tokenVisible }) {
-                    Icon(
-                        if (tokenVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                        contentDescription = null
+        ) {
+            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.CloudDone, contentDescription = null, tint = if (state.isGoogleDriveConnected) StatusGreen else MaterialTheme.colorScheme.primary)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        "วิธีที่ 1: บัญชี Google (แนะนำ / Recommended)",
+                        fontWeight = FontWeight.Bold,
+                        style = MaterialTheme.typography.titleSmall
                     )
                 }
-            },
-            visualTransformation = if (tokenVisible) VisualTransformation.None else PasswordVisualTransformation(),
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth()
-        )
 
-        Spacer(modifier = Modifier.height(16.dp))
+                Text(
+                    text = "ลงชื่อเข้าใช้ด้วย Gmail เพื่อเชื่อมต่อ Google Drive อัตโนมัติ สะดวก ปลอดภัย ไม่ต้องวาง URL หรือรหัสผ่าน",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
 
-        OutlinedButton(
-            onClick = { viewModel.testConnection() },
-            enabled = state.webAppUrl.isNotBlank() && state.authToken.isNotBlank() && !state.isTestingConnection,
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(12.dp)
-        ) {
-            if (state.isTestingConnection) {
-                CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
-                Spacer(modifier = Modifier.width(8.dp))
-                Text("กำลังทดสอบการเชื่อมต่อ...")
-            } else {
-                Text(stringResource(R.string.action_test_connection), fontWeight = FontWeight.Bold)
+                if (state.isGoogleDriveConnected && state.googleUser != null) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        if (!state.googleUser?.photoUrl?.toString().isNullOrBlank()) {
+                            AsyncImage(
+                                model = state.googleUser?.photoUrl,
+                                contentDescription = "User Avatar",
+                                modifier = Modifier
+                                    .size(40.dp)
+                                    .clip(CircleShape)
+                            )
+                        } else {
+                            Icon(
+                                Icons.Default.AccountCircle,
+                                contentDescription = null,
+                                modifier = Modifier.size(40.dp),
+                                tint = StatusGreen
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = state.googleUser?.displayName ?: state.googleUser?.email ?: "Google User",
+                                fontWeight = FontWeight.Bold,
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                            Text(
+                                text = state.googleUser?.email ?: "",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.CheckCircle, contentDescription = null, tint = StatusGreen, modifier = Modifier.size(14.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = stringResource(R.string.auth_connected_drive),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = StatusGreen,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+                    }
+                } else {
+                    Button(
+                        onClick = { viewModel.signInWithGoogle(context) },
+                        enabled = !state.isSigningInGoogle,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        if (state.isSigningInGoogle) {
+                            CircularProgressIndicator(modifier = Modifier.size(18.dp), color = Color.White, strokeWidth = 2.dp)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(stringResource(R.string.auth_signing_in))
+                        } else {
+                            Icon(Icons.Default.Login, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(stringResource(R.string.auth_sign_in_google), fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+
+                if (!state.authMessage.isNullOrBlank()) {
+                    Text(
+                        text = state.authMessage ?: "",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
             }
         }
 
-        if (state.connectionSuccess != null) {
-            Spacer(modifier = Modifier.height(12.dp))
-            val isOk = state.connectionSuccess == true
-            Card(
-                shape = RoundedCornerShape(12.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = if (isOk) StatusGreen.copy(alpha = 0.12f) else StatusRed.copy(alpha = 0.12f)
-                ),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Row(modifier = Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        if (isOk) Icons.Default.CheckCircle else Icons.Default.Lock,
-                        contentDescription = null,
-                        tint = if (isOk) StatusGreen else StatusRed
-                    )
-                    Spacer(modifier = Modifier.width(10.dp))
-                    Text(
-                        text = state.connectionMessage,
-                        color = if (isOk) StatusGreen else StatusRed,
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.Medium
-                    )
+        Spacer(modifier = Modifier.height(14.dp))
+
+        // Option B: Manual Web App URL + Token
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { showManualSetup = !showManualSetup }
+                .padding(vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text(
+                text = "วิธีที่ 2: ตั้งค่า Web App ด้วยตนเอง (Advanced)",
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.primary
+            )
+            Text(
+                text = if (showManualSetup) "ซ่อน" else "แสดง",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.primary
+            )
+        }
+
+        AnimatedVisibility(visible = showManualSetup) {
+            Column(modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
+                OutlinedTextField(
+                    value = state.webAppUrl,
+                    onValueChange = { viewModel.setWebAppUrl(it) },
+                    label = { Text(stringResource(R.string.url_label)) },
+                    placeholder = { Text("https://script.google.com/macros/s/.../exec") },
+                    leadingIcon = { Icon(Icons.Default.Link, contentDescription = null) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                OutlinedTextField(
+                    value = state.authToken,
+                    onValueChange = { viewModel.setAuthToken(it) },
+                    label = { Text(stringResource(R.string.token_label)) },
+                    leadingIcon = { Icon(Icons.Default.Key, contentDescription = null) },
+                    trailingIcon = {
+                        IconButton(onClick = { tokenVisible = !tokenVisible }) {
+                            Icon(
+                                if (tokenVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                contentDescription = null
+                            )
+                        }
+                    },
+                    visualTransformation = if (tokenVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                OutlinedButton(
+                    onClick = { viewModel.testConnection() },
+                    enabled = state.webAppUrl.isNotBlank() && state.authToken.isNotBlank() && !state.isTestingConnection,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    if (state.isTestingConnection) {
+                        CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("กำลังทดสอบการเชื่อมต่อ...")
+                    } else {
+                        Text(stringResource(R.string.action_test_connection), fontWeight = FontWeight.Bold)
+                    }
+                }
+
+                if (state.connectionSuccess != null) {
+                    Spacer(modifier = Modifier.height(10.dp))
+                    val isOk = state.connectionSuccess == true
+                    Card(
+                        shape = RoundedCornerShape(12.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = if (isOk) StatusGreen.copy(alpha = 0.12f) else StatusRed.copy(alpha = 0.12f)
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                if (isOk) Icons.Default.CheckCircle else Icons.Default.Lock,
+                                contentDescription = null,
+                                tint = if (isOk) StatusGreen else StatusRed
+                            )
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Text(
+                                text = state.connectionMessage,
+                                color = if (isOk) StatusGreen else StatusRed,
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
+                    }
                 }
             }
         }

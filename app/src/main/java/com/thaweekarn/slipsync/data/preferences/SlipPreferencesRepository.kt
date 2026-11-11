@@ -45,6 +45,7 @@ class SlipPreferencesRepository(private val context: Context) {
         val USER_CONFIRMED_AUTOSTART = booleanPreferencesKey("user_confirmed_autostart")
         val USER_CONFIRMED_BATTERY = booleanPreferencesKey("user_confirmed_battery")
         val APP_LANGUAGE = stringPreferencesKey("app_language")
+        val GOOGLE_DRIVE_AUTO_CONNECTED = booleanPreferencesKey("google_drive_auto_connected")
     }
 
     private val dataStore = context.dataStore
@@ -125,6 +126,14 @@ class SlipPreferencesRepository(private val context: Context) {
     val appLanguage: Flow<String> = dataStore.data
         .catch { if (it is IOException) emit(emptyPreferences()) else throw it }
         .map { it[PreferencesKeys.APP_LANGUAGE] ?: "th" }
+
+    val googleDriveAutoConnected: Flow<Boolean> = dataStore.data
+        .catch { if (it is IOException) emit(emptyPreferences()) else throw it }
+        .map { it[PreferencesKeys.GOOGLE_DRIVE_AUTO_CONNECTED] ?: false }
+
+    suspend fun setGoogleDriveAutoConnected(connected: Boolean) {
+        dataStore.edit { it[PreferencesKeys.GOOGLE_DRIVE_AUTO_CONNECTED] = connected }
+    }
 
     suspend fun setWebAppUrl(url: String) {
         dataStore.edit { it[PreferencesKeys.WEB_APP_URL] = url.trim() }

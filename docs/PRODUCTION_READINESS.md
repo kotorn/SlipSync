@@ -90,6 +90,16 @@ This document details the hardening, security improvements, failure mode analysi
 - **Fix**: Executed `gradle wrapper`, generating valid `gradlew`, `gradlew.bat`, and `gradle-wrapper.jar` components.
 - **Verification**: Clean build and successful execution of `:app:lintDebug` and `:app:testDebugUnitTest`.
 
+### 3.9 Firebase Authentication & Automated Google Drive Connection (Feature)
+- **Problem**: Manually deploying and configuring Google Apps Script with Web App URLs and secret tokens was tedious and error-prone for non-technical users.
+- **Fix**:
+  1. Integrated Firebase Authentication with Google Sign-In via Jetpack `CredentialManager` (`GetSignInWithGoogleOption`).
+  2. Integrated Cloud Firestore with zero-trust security rules (`request.auth.uid == userId`) for storing user profile and Google Drive folder routing configuration.
+  3. Added Google Account management in `SettingsScreen` (avatar, email, connection status, sign-in/sign-out buttons).
+  4. Added 1-tap Google Sign-In option in `OnboardingScreen` Step 2 with automatic progression.
+  5. Updated `HealthCheckRepository` and `HomeViewModel` to recognize Google account authentication as an active cloud connection.
+- **Verification**: `testGoogleDriveAutoConnectionPreference` (PASS) and `testHealthCheckWithGoogleDriveAutoConnection` (PASS).
+
 ---
 
 ## 4. Test Verification Matrix & Evidence
@@ -107,11 +117,13 @@ This document details the hardening, security improvements, failure mode analysi
 | `testThaiSlipQrParserHardenedFalsePositiveRejection` | QR Parsing | Rejects non-bank URLs, Wi-Fi, vCard, static merchant QRs | **PASS** |
 | `testThaiSlipQrParserValidBankFormats` | QR Parsing | Validates BOT slip mini-QR and official bank URLs | **PASS** |
 | `testCryptoManagerSecurityPolicy` | Security | Persistent Keystore in prod; clean test runner isolation | **PASS** |
+| `testGoogleDriveAutoConnectionPreference` | Cloud Auth | Persists and exposes Google Drive connection state | **PASS** |
+| `testHealthCheckWithGoogleDriveAutoConnection` | System Health | Recognizes Google Sign-In as valid cloud connection | **PASS** |
 
 ### Build & Verification Evidence:
 - **Gradle Compilation**: `compile_applet` PASSED cleanly (`Build succeeded - the applet is compiled`).
-- **Unit & Robolectric Tests**: `gradle :app:testDebugUnitTest` PASSED (11 of 11 tests PASSED, 0 failures, 0 errors).
-- **Android Lint**: `gradle :app:lintDebug` PASSED (0 fatal errors).
+- **Unit & Robolectric Tests**: `gradle :app:testDebugUnitTest` PASSED (13 of 13 tests PASSED, 0 failures, 0 errors).
+- **Android Lint**: PASSED (0 fatal errors).
 
 ---
 

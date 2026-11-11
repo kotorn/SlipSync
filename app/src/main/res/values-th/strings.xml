@@ -116,4 +116,16 @@
     <string name="language_title">ภาษา (Language)</string>
     <string name="lang_thai">ไทย (Thai)</string>
     <string name="lang_english">English</string>
+
+    <!-- Google Sign-In & Firebase -->
+    <string name="auth_sign_in_google">ลงชื่อเข้าใช้ด้วย Google</string>
+    <string name="auth_sign_out">ออกจากระบบ</string>
+    <string name="auth_connected_drive">เชื่อมต่อ Google Drive อัตโนมัติแล้ว</string>
+    <string name="auth_not_connected">ยังไม่ได้เข้าสู่ระบบ Google</string>
+    <string name="auth_google_desc">ลงชื่อเข้าใช้ด้วยบัญชี Gmail เพื่อเชื่อมต่อและส่งสลิปไปยัง Google Drive โดยอัตโนมัติ</string>
+    <string name="auth_signing_in">กำลังเข้าสู่ระบบ...</string>
+    <string name="auth_success">เข้าสู่ระบบสำเร็จ</string>
+    <string name="auth_cancelled">ยกเลิกการเข้าสู่ระบบ</string>
+    <string name="auth_account_title">บัญชี Google</string>
+    <string name="auth_or_manual">หรือกำหนดค่า URL Web App ด้วยตนเอง</string>
 </resources>

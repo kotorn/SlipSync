@@ -116,4 +116,16 @@
     <string name="language_title">Language</string>
     <string name="lang_thai">ไทย (Thai)</string>
     <string name="lang_english">English</string>
+
+    <!-- Google Sign-In & Firebase -->
+    <string name="auth_sign_in_google">Sign in with Google</string>
+    <string name="auth_sign_out">Sign out</string>
+    <string name="auth_connected_drive">Connected to Google Drive</string>
+    <string name="auth_not_connected">Not connected to Google</string>
+    <string name="auth_google_desc">Sign in with your Gmail account to automatically archive slips to Google Drive</string>
+    <string name="auth_signing_in">Signing in...</string>
+    <string name="auth_success">Signed in successfully</string>
+    <string name="auth_cancelled">Sign-in cancelled</string>
+    <string name="auth_account_title">Google Account</string>
+    <string name="auth_or_manual">Or configure manual Web App</string>
 </resources>

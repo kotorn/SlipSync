@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "SlipSync Firestore Blueprint",
+  "description": "Firestore schema for SlipSync users, Google Drive connection settings, and cloud slip sync",
+  "type": "object",
+  "entities": {
+    "users": {
+      "path": "/users/{userId}",
+      "description": "User profile, Google Drive connection, and auto-sync preferences",
+      "properties": {
+        "userId": { "type": "string" },
+        "email": { "type": "string" },
+        "displayName": { "type": "string" },
+        "photoUrl": { "type": "string" },
+        "driveConnected": { "type": "boolean" },
+        "driveFolderName": { "type": "string" },
+        "driveFolderId": { "type": "string" },
+        "autoUpload": { "type": "boolean" },
+        "createdAt": { "type": "number" },
+        "lastLoginAt": { "type": "number" }
+      },
+      "required": ["userId", "email"]
+    },
+    "userSlips": {
+      "path": "/users/{userId}/slips/{sha256}",
+      "description": "Individual bank slip records archived to Google Drive",
+      "properties": {
+        "sha256": { "type": "string" },
+        "transactionId": { "type": "string" },
+        "slipQr": { "type": "string" },
+        "fileName": { "type": "string" },
+        "sourceFolder": { "type": "string" },
+        "driveFileId": { "type": "string" },
+        "status": { "type": "string" },
+        "takenAt": { "type": "number" },
+        "uploadedAt": { "type": "number" }
+      },
+      "required": ["sha256", "fileName"]
+    }
+  }
+}

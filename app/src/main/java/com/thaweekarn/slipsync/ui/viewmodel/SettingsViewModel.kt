@@ -20,6 +20,9 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
+import com.google.firebase.auth.FirebaseUser
+import com.thaweekarn.slipsync.data.auth.AuthRepository
+
 data class SettingsUiState(
     val webAppUrl: String = "",
     val authToken: String = "",
@@ -31,7 +34,11 @@ data class SettingsUiState(
     val isPaused: Boolean = false,
     val backfillDays: Int = 7,
     val appLanguage: String = "th",
-    val healthChecks: List<HealthCheckItem> = emptyList()
+    val healthChecks: List<HealthCheckItem> = emptyList(),
+    val isGoogleDriveConnected: Boolean = false,
+    val googleUser: FirebaseUser? = null,
+    val isSigningInGoogle: Boolean = false,
+    val authMessage: String? = null
 )
 
 class SettingsViewModel(application: Application) : AndroidViewModel(application) {
@@ -39,10 +46,13 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     private val db = SlipDatabase.getInstance(application)
     private val prefsRepo = SlipPreferencesRepository(application)
     private val healthRepo = HealthCheckRepository(application, prefsRepo)
+    private val authRepo = AuthRepository(application, prefsRepo)
 
     private val _discoveredFolders = MutableStateFlow<List<String>>(emptyList())
     private val _suggestedFolders = MutableStateFlow<List<String>>(emptyList())
     private val _healthChecks = MutableStateFlow<List<HealthCheckItem>>(emptyList())
+    private val _isSigningInGoogle = MutableStateFlow(false)
+    private val _authMessage = MutableStateFlow<String?>(null)
     val healthChecks: StateFlow<List<HealthCheckItem>> = _healthChecks.asStateFlow()
 
     val uiState: StateFlow<SettingsUiState> = combine(
@@ -54,7 +64,10 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         prefsRepo.backfillDays,
         prefsRepo.appLanguage,
         _discoveredFolders,
-        _suggestedFolders
+        _suggestedFolders,
+        authRepo.currentUser,
+        _isSigningInGoogle,
+        _authMessage
     ) { values ->
         val url = values[0] as String
         val token = values[1] as String
@@ -68,6 +81,9 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         val discovered = values[7] as List<String>
         @Suppress("UNCHECKED_CAST")
         val suggested = values[8] as List<String>
+        val currentUser = values[9] as? FirebaseUser
+        val isSigningIn = values[10] as Boolean
+        val authMsg = values[11] as? String
 
         val now = System.currentTimeMillis()
         val isPaused = pause > now
@@ -83,7 +99,11 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             isPaused = isPaused,
             backfillDays = backfill,
             appLanguage = lang,
-            healthChecks = _healthChecks.value
+            healthChecks = _healthChecks.value,
+            isGoogleDriveConnected = currentUser != null,
+            googleUser = currentUser,
+            isSigningInGoogle = isSigningIn,
+            authMessage = authMsg
         )
     }.stateIn(
         scope = viewModelScope,
@@ -94,6 +114,11 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     init {
         loadFolders()
         refreshHealthChecks()
+        viewModelScope.launch {
+            authRepo.currentUser.collect {
+                refreshHealthChecks()
+            }
+        }
     }
 
     private fun loadFolders() {
@@ -181,5 +206,38 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             val logText = LogExporter.generateSanitizedLog(getApplication(), prefsRepo, db)
             LogExporter.shareLog(getApplication(), logText)
         }
+    }
+
+    fun signInWithGoogle(context: android.content.Context) {
+        viewModelScope.launch {
+            _isSigningInGoogle.value = true
+            _authMessage.value = null
+            val result = authRepo.signInWithGoogle(context)
+            _isSigningInGoogle.value = false
+            result.fold(
+                onSuccess = { user ->
+                    _authMessage.value = "เชื่อมต่อ Google Drive สำเร็จ (${user.email})"
+                    refreshHealthChecks()
+                    WorkScheduler.enqueueSyncWork(getApplication())
+                },
+                onFailure = { error ->
+                    if (error !is androidx.credentials.exceptions.GetCredentialCancellationException) {
+                        _authMessage.value = error.message ?: "Sign-in failed"
+                    }
+                }
+            )
+        }
+    }
+
+    fun signOut() {
+        viewModelScope.launch {
+            authRepo.signOut()
+            _authMessage.value = "ออกจากระบบเรียบร้อยแล้ว"
+            refreshHealthChecks()
+        }
+    }
+
+    fun clearAuthMessage() {
+        _authMessage.value = null
     }
 }

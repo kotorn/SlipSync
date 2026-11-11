@@ -15,6 +15,9 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
+import com.google.firebase.auth.FirebaseUser
+import com.thaweekarn.slipsync.data.auth.AuthRepository
+
 data class OnboardingUiState(
     val currentStep: Int = 1,
     val webAppUrl: String = "",
@@ -29,7 +32,11 @@ data class OnboardingUiState(
     val testImageUri: Uri? = null,
     val isTestingUpload: Boolean = false,
     val testUploadSuccess: Boolean? = null,
-    val testUploadMessage: String = ""
+    val testUploadMessage: String = "",
+    val isGoogleDriveConnected: Boolean = false,
+    val googleUser: FirebaseUser? = null,
+    val isSigningInGoogle: Boolean = false,
+    val authMessage: String? = null
 )
 
 class OnboardingViewModel(application: Application) : AndroidViewModel(application) {
@@ -37,12 +44,47 @@ class OnboardingViewModel(application: Application) : AndroidViewModel(applicati
     private val db = SlipDatabase.getInstance(application)
     private val prefsRepo = SlipPreferencesRepository(application)
     private val slipRepo = SlipRepository(application, db.slipDao(), prefsRepo)
+    private val authRepo = AuthRepository(application, prefsRepo)
 
     private val _uiState = MutableStateFlow(OnboardingUiState())
     val uiState: StateFlow<OnboardingUiState> = _uiState.asStateFlow()
 
     init {
         loadInitialData()
+        observeAuth()
+    }
+
+    private fun observeAuth() {
+        viewModelScope.launch {
+            authRepo.currentUser.collect { user ->
+                _uiState.value = _uiState.value.copy(
+                    googleUser = user,
+                    isGoogleDriveConnected = user != null
+                )
+            }
+        }
+    }
+
+    fun signInWithGoogle(context: android.content.Context) {
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(isSigningInGoogle = true, authMessage = null)
+            val result = authRepo.signInWithGoogle(context)
+            _uiState.value = _uiState.value.copy(isSigningInGoogle = false)
+            result.fold(
+                onSuccess = { user ->
+                    _uiState.value = _uiState.value.copy(
+                        isGoogleDriveConnected = true,
+                        googleUser = user,
+                        authMessage = "เข้าสู่ระบบสำเร็จ! เชื่อมต่อ Google Drive แล้ว"
+                    )
+                },
+                onFailure = { error ->
+                    if (error !is androidx.credentials.exceptions.GetCredentialCancellationException) {
+                        _uiState.value = _uiState.value.copy(authMessage = error.message ?: "Sign-in failed")
+                    }
+                }
+            )
+        }
     }
 
     private fun loadInitialData() {
@@ -51,6 +93,7 @@ class OnboardingViewModel(application: Application) : AndroidViewModel(applicati
             val token = prefsRepo.authToken.first()
             val folders = prefsRepo.selectedFolders.first()
             val backfill = prefsRepo.backfillDays.first()
+            val user = authRepo.currentUser.value
 
             val discovered = FileUtils.getDistinctImageFolders(getApplication())
             val suggested = discovered.filter { f ->
@@ -63,7 +106,9 @@ class OnboardingViewModel(application: Application) : AndroidViewModel(applicati
                 discoveredFolders = discovered,
                 suggestedBankFolders = suggested,
                 selectedFolders = if (folders.isNotEmpty()) folders else emptySet(), // suggestions only, user confirms
-                backfillDays = backfill
+                backfillDays = backfill,
+                isGoogleDriveConnected = user != null,
+                googleUser = user
             )
         }
     }

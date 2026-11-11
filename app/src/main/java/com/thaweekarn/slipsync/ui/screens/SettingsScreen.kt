@@ -60,6 +60,17 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.thaweekarn.slipsync.R
 import com.thaweekarn.slipsync.ui.viewmodel.SettingsViewModel
 
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.filled.AccountCircle
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.CloudDone
+import androidx.compose.material.icons.filled.Login
+import androidx.compose.material.icons.filled.Logout
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.ui.draw.clip
+import coil.compose.AsyncImage
+import com.thaweekarn.slipsync.ui.theme.StatusGreen
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
@@ -126,6 +137,107 @@ fun SettingsScreen(
                         )
                     }
                     Icon(Icons.Default.ChevronRight, contentDescription = null)
+                }
+            }
+
+            // 1.5 Google Account & Drive Integration Card
+            Card(
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.CloudDone, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(stringResource(R.string.auth_account_title) + " & Google Drive", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleSmall)
+                    }
+
+                    if (state.isGoogleDriveConnected && state.googleUser != null) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            if (!state.googleUser?.photoUrl?.toString().isNullOrBlank()) {
+                                AsyncImage(
+                                    model = state.googleUser?.photoUrl,
+                                    contentDescription = "User Avatar",
+                                    modifier = Modifier
+                                        .size(44.dp)
+                                        .clip(CircleShape)
+                                )
+                            } else {
+                                Icon(
+                                    Icons.Default.AccountCircle,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(44.dp),
+                                    tint = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = state.googleUser?.displayName ?: state.googleUser?.email ?: "Google User",
+                                    fontWeight = FontWeight.Bold,
+                                    style = MaterialTheme.typography.bodyMedium
+                                )
+                                Text(
+                                    text = state.googleUser?.email ?: "",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(Icons.Default.CheckCircle, contentDescription = null, tint = StatusGreen, modifier = Modifier.size(14.dp))
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(
+                                        text = stringResource(R.string.auth_connected_drive),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = StatusGreen,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                }
+                            }
+                            OutlinedButton(
+                                onClick = { viewModel.signOut() },
+                                shape = RoundedCornerShape(8.dp)
+                            ) {
+                                Text(stringResource(R.string.auth_sign_out), style = MaterialTheme.typography.labelMedium)
+                            }
+                        }
+                    } else {
+                        Text(
+                            text = stringResource(R.string.auth_google_desc),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+
+                        FilledTonalButton(
+                            onClick = { viewModel.signInWithGoogle(context) },
+                            enabled = !state.isSigningInGoogle,
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            if (state.isSigningInGoogle) {
+                                CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(stringResource(R.string.auth_signing_in))
+                            } else {
+                                Icon(Icons.Default.Login, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(stringResource(R.string.auth_sign_in_google), fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+
+                    if (!state.authMessage.isNullOrBlank()) {
+                        Text(
+                            text = state.authMessage ?: "",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.padding(top = 4.dp)
+                        )
+                    }
                 }
             }
 

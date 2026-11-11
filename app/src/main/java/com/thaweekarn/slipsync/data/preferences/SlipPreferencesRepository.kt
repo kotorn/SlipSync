@@ -224,12 +224,7 @@ class SlipPreferencesRepository(private val context: Context) {
     }
 
     suspend fun recordServerStatus(error: String?, statusCode: Int = 0) {
-        if (error.isNullOrBlank()) {
-            setLastSuccessfulUpload(System.currentTimeMillis())
-            setLastServerError("", statusCode)
-        } else {
-            setLastServerError(error, statusCode)
-        }
+        setLastServerError(error ?: "", statusCode)
     }
 
     suspend fun setPauseUntil(timestamp: Long) {

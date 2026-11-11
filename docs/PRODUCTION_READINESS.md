@@ -25,16 +25,18 @@ This document details the hardening, security improvements, failure mode analysi
   • Deduplication priority: 1. normalizedTransactionId -> 2. slipQr -> 3. SHA-256
         │
         ▼
-[ Resilient Upload Queue & Concurrency Lease ]
+[ Resilient Upload Queue & Concurrency Lease with Worker Ownership ]
   • Worker leases item (5-min expiration) with workerRunId
+  • Update ownership enforcement: expired workers cannot overwrite newer state
   • WorkManager unique work "slip-sync" (ExistingWorkPolicy.KEEP)
         │
         ▼ (HTTPS POST JSON with redirect handling)
 [ Google Apps Script Web App Receiver ]
   • Token authentication in POST body
+  • Server-side SHA-256 integrity verification
   • Formula Injection Sanitization (=, +, -, @ escaped)
-  • Google Sheet Ledger (`SlipLedger`) Deduplication
-  • Idempotent Google Drive file upload with structured metadata
+  • Google Sheet Ledger (`SlipLedger`) Deduplication & 8-to-9 Column Migration
+  • Content-based Drive file idempotency with structured metadata
         │
         ▼
 [ Google Drive / Gemini Enterprise Agent Trigger ]
@@ -42,63 +44,78 @@ This document details the hardening, security improvements, failure mode analysi
 
 ---
 
-## 3. P0 Critical Fixes & Improvements
+## 3. P0/P1 Follow-Up Audit & Fixes Implemented
 
-### 3.1 Unified Shared Image & MediaStore Pipeline
-- **Previous Issue**: Images shared via Android's `ACTION_SEND` were saved into `cacheDir`, assigned arbitrary dummy `mediaStoreId`s, and ignored by the upload worker. Furthermore, UI thumbnail rendering crashed attempting to resolve a non-existent MediaStore URI.
-- **Production Solution**:
-  - `FileUtils.copyStreamToDurableStorage()` immediately copies the incoming stream to `context.filesDir/shared_slips/` (which OS cache-cleaners never purge).
-  - Both `SlipItemRow` and `SlipDetailScreen` dynamically inspect `item.localFilePath` first; if present, Coil loads the durable file directly.
-  - `SlipUploadWorker` processes both MediaStore-discovered and shared queue entries identically through `slipDao.getEligibleUploads()`.
+### 3.1 Shared Slip Upload Allowed When `selectedFolders` is Empty (P0)
+- **Problem**: Previously, `SlipUploadWorker` performed an early return if `selectedFolders.isEmpty()`. Users who did not select MediaStore folders or who relied strictly on the Share Target (`ACTION_SEND`) to queue slips could never upload them.
+- **Fix**: The worker now only exits early if core server credentials (`webAppUrl` or `authToken`) are missing. If `selectedFolders` is empty, Phase 1 (MediaStore scan) is bypassed, but Phase 2 (Upload Queue processing) proceeds normally, successfully uploading all pending shared slips.
+- **Verification**: `testSharedSlipUploadAllowedWhenSelectedFoldersEmpty` (PASS).
 
-### 3.2 Durable Queue with Concurrency Leases
-- **Previous Issue**: Crashing or killed workers could leave rows in `UPLOADING` state indefinitely or cause race conditions if multiple triggers (WorkManager, tile, share target) fired at once.
-- **Production Solution**:
-  - `uploadLeaseUntil` (epoch timestamp) and `workerRunId` columns track active upload leases.
-  - `slipDao.acquireLease()` atomically acquires a 5-minute lease.
-  - On worker launch, `slipDao.resetExpiredLeases(now)` recovers abandoned uploads safely without re-uploading active ones.
-  - All background triggers enforce `ExistingWorkPolicy.KEEP` under unique work tag `"slip-sync"`.
+### 3.2 Backward-Compatible Google Sheets Ledger Migration (P1)
+- **Problem**: Early versions of `Code.gs` initialized an 8-column ledger: `[slipQr, sha256, fileId, fileName, sourceFolder, hasQr, takenAt, receivedAt]`. Upgrading to the 9-column schema (with `transactionId` in Column 1) risked misaligned data rows or breaking deduplication against historical records.
+- **Fix**: `migrateLedgerSheetIfNeeded()` inspects Row 1. If Column 1 is `"slipQr"` and `"transactionId"` is missing, it dynamically inserts a new column at index 1 (`insertColumnBefore(1)`), labels it `"transactionId"`, and backfills transaction IDs from existing QR strings where possible. Furthermore, `checkDuplicate()` dynamically builds a header-to-column index map (`colMap`), ensuring accurate deduplication across both 8-column and 9-column sheets without data corruption.
 
-### 3.3 Hardware-Backed Credential Security
-- **Previous Issue**: Authentication tokens were stored in plain text DataStore.
-- **Production Solution**:
-  - `CryptoManager` utilizes `AndroidKeyStore` with `AES-256-GCM` (`AES/GCM/NoPadding`).
-  - Transparent migration: on first read, any legacy plaintext token is encrypted into `encrypted_auth_token` and the plaintext key is deleted.
-  - Excluded from cloud backup in `backup_rules.xml` and `data_extraction_rules.xml`.
-  - Exported log files redact both the token and raw QR payload.
+### 3.3 Server-Side SHA-256 Verification & Content-Based Drive Idempotency (P0)
+- **Problem**: The receiver previously trusted client-supplied SHA-256 values without server validation and checked Drive idempotency solely by filename (`folder.getFilesByName(fileName)`), which fails if filenames vary or collide.
+- **Fix**:
+  1. `Code.gs` computes `Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, decodedBytes)` and asserts byte-level equivalence against client `sha256`. If mismatched, it returns HTTP 400 `CHECKSUM_MISMATCH`.
+  2. Idempotency checks first query Drive using file description metadata: `folder.searchFiles("description contains '\"sha256\": \"" + sha256 + "\"' and trashed = false")`. If found, the existing file is returned, preventing redundant blob creation.
 
-### 3.4 Two-Tier Deduplication (PromptPay EMVCo + SHA-256)
-- **Previous Issue**: Slips re-saved with different compression or timestamp could produce different SHA-256 hashes.
-- **Production Solution**:
-  - `ThaiSlipQrParser` parses Bank of Thailand (BOT) National e-Payment EMVCo payloads (`000201...`, AID `A000000677010111`) and official bank verification URLs, extracting `normalizedTransactionId`.
-  - Deduplication checks `normalizedTransactionId` first, then full `slipQr`, and falls back to `sha256`.
+### 3.4 Worker Ownership Enforcement on Lease Updates (P0)
+- **Problem**: `SlipDao.updateUploadResult` previously executed `WHERE sha256 = :sha256`. If Worker A's lease expired or lagged and Worker B picked up the item, Worker A could subsequently overwrite Worker B's newer result upon completion.
+- **Fix**: Implemented `updateUploadResultWithOwner(sha256, workerId, ...)` with `WHERE sha256 = :sha256 AND workerRunId = :workerId`. Returns the number of affected rows. If 0 (indicating lease preemption or expiration), the result is discarded safely.
+- **Verification**: `testWorkerRunIdOwnershipLeaseUpdate` (PASS).
 
----
+### 3.5 Health Tracking: `lastSuccessfulUpload` Isolation (P1)
+- **Problem**: `recordServerStatus(null, 200)` erroneously updated `lastSuccessfulUpload`, meaning routine health checks (ping) or duplicate responses falsely registered as new uploads.
+- **Fix**: `recordServerStatus()` now strictly updates server status codes and error messages. `prefsRepo.setLastSuccessfulUpload()` is exclusively invoked in `SlipUploadWorker` after confirmed successful upload of a non-duplicate slip with active lease ownership (`updated > 0`).
+- **Verification**: `testUploadHealthTrackingConfirmedOnly` (PASS).
 
-## 4. Google Apps Script Receiver Hardening
+### 3.6 Hardened Thai Slip QR Parser (P1)
+- **Problem**: Generic URLs containing the substring `"slip"` or static merchant PromptPay QRs (without dynamic transaction references) could trigger false positive bank detection and cause erroneous deduplication.
+- **Fix**:
+  1. Bank URLs must strictly match authoritative host domains (`kasikornbank.com`, `scbeasy.com`, `scb.co.th`, `krungthai.com`, `bangkokbank.com`, `krungsri.com`, `ttbbank.com`, `gsb.or.th`, `baac.or.th`, `promptpay.co.th`).
+  2. Extracted URL transaction reference must be between 6 and 64 alphanumeric characters.
+  3. Static PromptPay merchant QRs (AID `A000000677010111` without dynamic reference) return `normalizedTransactionId = null` and `isValidThaiSlipQr = false`.
+  4. Unsupported formats (Wi-Fi, vCard, mailto, tel) are rejected immediately.
+- **Verification**: `testThaiSlipQrParserHardenedFalsePositiveRejection` (PASS) and `testThaiSlipQrParserValidBankFormats` (PASS).
 
-### 4.1 Formula / CSV Injection Protection
-User-controlled fields (`fileName`, `sourceFolder`, `slipQr`, `sha256`, `transactionId`) appended to Google Sheets could potentially start with `=`, `+`, `-`, or `@`. `sanitizeCell()` prepends `'` to neutralize formula execution risks.
+### 3.7 Removal of Insecure/Nonpersistent Keystore Fallbacks in Production (P0)
+- **Problem**: Previous fallback logic generated an in-memory ephemeral AES key when KeyStore initialization caught an error, which meant killing or restarting the app would destroy the key and render stored tokens un-decryptable.
+- **Fix**: In production builds (`!isTestEnvironment`), `CryptoManager` strictly requires `AndroidKeyStore`. If hardware KeyStore services fail on a device, a `SecurityException` is thrown rather than silently generating an ephemeral throwaway key. The fallback is strictly isolated to JVM test runners (`isTestEnvironment == true`).
+- **Verification**: `testCryptoManagerSecurityPolicy` (PASS).
 
-### 4.2 Idempotency & Concurrency Locking
-- `LockService.getScriptLock().tryLock(30000)` prevents concurrent race conditions across simultaneous uploads.
-- Drive folder is checked by `fileName` before creating a new file blob.
-- Returns structured JSON `{ ok: true, duplicate: ..., duplicateType: ..., fileId: ... }`.
-
----
-
-## 5. Xiaomi HyperOS / MIUI Optimization
-
-| Feature | HyperOS Behavior | SlipSync Mitigation |
-|---|---|---|
-| **Aggressive Process Termination** | Kills background services within 3–5 minutes | Enqueued as standard `OneTimeWorkRequest` with `Constraints.addContentUriTrigger` |
-| **Doze Mode & App Standby** | Pauses network operations when device is idle | Periodic fallback (every 15 min) + `BootReceiver` re-enqueuing on boot |
-| **Partial Photo Access (Android 14)** | `READ_MEDIA_VISUAL_USER_SELECTED` blocks background scans | Detects partial access and displays a blocking alert banner with deep link |
-| **Watchdog Alert** | User unaware if background sync stopped for >24h | High-priority notification when `lastSuccessfulRun` > 24 hours |
+### 3.8 Gradle Wrapper & Toolchain Repair
+- **Problem**: `gradle-wrapper.jar` was absent from `gradle/wrapper/`.
+- **Fix**: Executed `gradle wrapper`, generating valid `gradlew`, `gradlew.bat`, and `gradle-wrapper.jar` components.
+- **Verification**: Clean build and successful execution of `:app:lintDebug` and `:app:testDebugUnitTest`.
 
 ---
 
-## 6. Token Rotation & Operational Procedures
+## 4. Test Verification Matrix & Evidence
+
+| Test Case | Scope | Expected Behavior | Result |
+|---|---|---|---|
+| `testAppName` | App Branding | Matches "SlipSync" | **PASS** |
+| `testHashCalculation` | Cryptography | 64-char lowercase hex SHA-256 | **PASS** |
+| `testFileNameGeneration` | File Formatting | yyyyMMdd_HHmmss_<bank>_<sha8>.ext | **PASS** |
+| `testFolderPathNormalizationAndMatching` | MediaStore | Strict folder match, no sub-name false matches | **PASS** |
+| `testExtractExtension` | File Extension | Preserves jpg, jpeg, png, webp | **PASS** |
+| `testSharedSlipUploadAllowedWhenSelectedFoldersEmpty` | Queue / Shared Slips | Discovers & uploads shared slips with empty folder set | **PASS** |
+| `testWorkerRunIdOwnershipLeaseUpdate` | Concurrency | Unauthorized worker updates 0 rows; owner updates 1 row | **PASS** |
+| `testUploadHealthTrackingConfirmedOnly` | Health Telemetry | `lastSuccessfulUpload` does not change on ping or server status | **PASS** |
+| `testThaiSlipQrParserHardenedFalsePositiveRejection` | QR Parsing | Rejects non-bank URLs, Wi-Fi, vCard, static merchant QRs | **PASS** |
+| `testThaiSlipQrParserValidBankFormats` | QR Parsing | Validates BOT slip mini-QR and official bank URLs | **PASS** |
+| `testCryptoManagerSecurityPolicy` | Security | Persistent Keystore in prod; clean test runner isolation | **PASS** |
+
+### Build & Verification Evidence:
+- **Gradle Compilation**: `compile_applet` PASSED cleanly (`Build succeeded - the applet is compiled`).
+- **Unit & Robolectric Tests**: `gradle :app:testDebugUnitTest` PASSED (11 of 11 tests PASSED, 0 failures, 0 errors).
+- **Android Lint**: `gradle :app:lintDebug` PASSED (0 fatal errors).
+
+---
+
+## 5. Token Rotation & Operational Procedures
 
 1. **Rotating Receiver Token**:
    - In Google Apps Script Project Settings > Script Properties > update `AUTH_TOKEN` with a new random 32+ character string.

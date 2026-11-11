@@ -2,7 +2,9 @@
  * SlipSync Google Apps Script Receiver
  *
  * Receives bank transfer slip images uploaded by the SlipSync Android app,
- * performs two-tier deduplication (Transaction ID / QR -> SHA-256) via a Google Sheet ledger,
+ * verifies SHA-256 integrity on the server, performs content-based Drive idempotency,
+ * conducts two-tier deduplication (Transaction ID / QR -> SHA-256) via a Google Sheet ledger,
+ * includes backward-compatible migration for 8-column historical ledgers,
  * protects against Formula Injection (CSV / Spreadsheet command injection),
  * stores images to the designated Google Drive folder ("Slips/Inbox"),
  * tags file descriptions with structured metadata for Gemini Enterprise Agent processing,
@@ -78,6 +80,32 @@ function doPost(e) {
       });
     }
 
+    // Server-side SHA-256 integrity verification
+    var decodedBytes;
+    try {
+      decodedBytes = Utilities.base64Decode(imageBase64);
+    } catch (decodeErr) {
+      return createJsonResponse({
+        ok: false,
+        error: "Malformed base64 image data",
+        errorCode: "INVALID_BASE64"
+      });
+    }
+
+    var digestBytes = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, decodedBytes);
+    var computedSha256 = digestBytes.map(function(byte) {
+      var hex = (byte < 0 ? byte + 256 : byte).toString(16);
+      return hex.length === 1 ? "0" + hex : hex;
+    }).join("").toLowerCase();
+
+    if (computedSha256 !== sha256) {
+      return createJsonResponse({
+        ok: false,
+        error: "SHA-256 integrity verification failed on server. Expected: " + sha256 + ", Computed: " + computedSha256,
+        errorCode: "CHECKSUM_MISMATCH"
+      });
+    }
+
     // Acquire lock (wait up to 30 seconds) to prevent concurrent deduplication race conditions
     lockAcquired = lock.tryLock(30000);
     if (!lockAcquired) {
@@ -88,11 +116,12 @@ function doPost(e) {
       });
     }
 
-    // 4. Open or create Google Sheet ledger for deduplication & auditing
+    // 4. Open or create Google Sheet ledger (with automatic backward-compatible schema migration)
     var sheet = getOrCreateLedgerSheet(scriptProps);
 
     // 5. Deduplication check:
-    // Priority 1: transactionId / slipQr
+    // Priority 1: transactionId
+    // Priority 1b: slipQr
     // Priority 2: sha256
     var dupResult = checkDuplicate(sheet, transactionId, slipQr, sha256);
     if (dupResult.isDuplicate) {
@@ -127,14 +156,41 @@ function doPost(e) {
       });
     }
 
-    // Idempotency check: Search Drive folder for matching file before creating
-    var existingFiles = folder.getFilesByName(fileName);
-    var targetFile;
-    if (existingFiles.hasNext()) {
-      targetFile = existingFiles.next();
-    } else {
-      // Decode Base64 and create file in Drive
-      var decodedBytes = Utilities.base64Decode(imageBase64);
+    // Content-based Drive Idempotency Check
+    var targetFile = null;
+
+    // Check if duplicate search returned a fileId
+    if (dupResult.fileId) {
+      try {
+        var existingFromLedger = DriveApp.getFileById(dupResult.fileId);
+        if (existingFromLedger && !existingFromLedger.isTrashed()) {
+          targetFile = existingFromLedger;
+        }
+      } catch (e) {}
+    }
+
+    // Search Drive folder for any file whose description metadata contains this sha256
+    if (!targetFile) {
+      try {
+        var searchResults = folder.searchFiles("description contains '\"sha256\": \"" + sha256 + "\"' and trashed = false");
+        if (searchResults.hasNext()) {
+          targetFile = searchResults.next();
+        }
+      } catch (searchErr) {
+        Logger.log("Notice: Drive content search by description failed: " + searchErr);
+      }
+    }
+
+    // Fallback: Check if file with exact target name already exists
+    if (!targetFile) {
+      var nameMatches = folder.getFilesByName(fileName);
+      if (nameMatches.hasNext()) {
+        targetFile = nameMatches.next();
+      }
+    }
+
+    // Create file blob in Drive only if not found by content
+    if (!targetFile) {
       var blob = Utilities.newBlob(decodedBytes, mimeType, fileName);
       targetFile = folder.createFile(blob);
     }
@@ -215,6 +271,7 @@ function sanitizeCell(val) {
 
 /**
  * Creates or retrieves the SlipLedger spreadsheet and returns the active sheet.
+ * Includes automatic backward-compatible schema migration from 8-column format to 9-column format.
  */
 function getOrCreateLedgerSheet(scriptProps) {
   var sheetId = scriptProps.getProperty("LEDGER_SHEET_ID");
@@ -275,12 +332,70 @@ function getOrCreateLedgerSheet(scriptProps) {
     ]);
     sheet.getRange(1, 1, 1, 9).setFontWeight("bold");
     sheet.setFrozenRows(1);
+    return sheet;
   }
+
+  // Check and perform backward-compatible schema migration if sheet is in legacy 8-column format
+  migrateLedgerSheetIfNeeded(sheet);
+
   return sheet;
 }
 
 /**
+ * Migrates a legacy 8-column sheet to 9-column format by inserting 'transactionId' as Column 1.
+ * Preserves all historical records.
+ */
+function migrateLedgerSheetIfNeeded(sheet) {
+  var lastCol = sheet.getLastColumn();
+  if (lastCol < 8) return;
+
+  var headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+  var col1 = String(headers[0] || "").trim();
+
+  // Legacy 8-column layout: [slipQr, sha256, fileId, fileName, sourceFolder, hasQr, takenAt, receivedAt]
+  if (col1 === "slipQr" && headers.indexOf("transactionId") === -1) {
+    Logger.log("Migrating ledger from 8-column to 9-column format (inserting transactionId column)...");
+    sheet.insertColumnBefore(1);
+    sheet.getRange(1, 1).setValue("transactionId");
+    sheet.getRange(1, 1, 1, 9).setFontWeight("bold");
+
+    // Optional backfill: Parse transaction ID from existing slipQr column (now Column 2)
+    var lastRow = sheet.getLastRow();
+    if (lastRow > 1) {
+      var qrValues = sheet.getRange(2, 2, lastRow - 1, 1).getValues();
+      var txUpdates = [];
+      for (var r = 0; r < qrValues.length; r++) {
+        var rawQr = String(qrValues[r][0] || "").replace(/^'/, "").trim();
+        var extractedTx = extractTxFromQrString(rawQr);
+        txUpdates.push([extractedTx ? sanitizeCell(extractedTx) : ""]);
+      }
+      sheet.getRange(2, 1, lastRow - 1, 1).setValues(txUpdates);
+    }
+  }
+}
+
+/**
+ * Helper to extract transaction ID from legacy QR strings during migration.
+ */
+function extractTxFromQrString(rawQr) {
+  if (!rawQr) return "";
+  if (rawQr.indexOf("http") === 0) {
+    var match = rawQr.match(/[?&](?:ref|tx|id|reference)=([A-Za-z0-9_-]+)/i);
+    if (match && match[1]) return match[1];
+    var lastSegment = rawQr.substring(rawQr.lastIndexOf("/") + 1).replace(/[^A-Za-z0-9_-]/g, "");
+    if (lastSegment.length >= 6) return lastSegment;
+  }
+  // EMVCo PromptPay slip AID check
+  if (rawQr.indexOf("000201") === 0 && rawQr.indexOf("A000000677010112") !== -1) {
+    var matchEmv = rawQr.match(/A000000677010112\d{2}([A-Za-z0-9]+)/);
+    if (matchEmv && matchEmv[1] && matchEmv[1].length >= 8) return matchEmv[1];
+  }
+  return "";
+}
+
+/**
  * Checks if the slip has already been recorded in the sheet ledger.
+ * Dynamically resolves column positions to support both 8-column and 9-column sheets.
  * Returns { isDuplicate: bool, duplicateType: string, fileId: string, fileName: string }
  */
 function checkDuplicate(sheet, transactionId, slipQr, sha256) {
@@ -289,18 +404,28 @@ function checkDuplicate(sheet, transactionId, slipQr, sha256) {
     return { isDuplicate: false };
   }
 
-  // Read columns:
-  // Col 1: transactionId, Col 2: slipQr, Col 3: sha256, Col 4: fileId, Col 5: fileName
-  var numCols = Math.min(sheet.getLastColumn(), 5);
-  var rangeValues = sheet.getRange(2, 1, lastRow - 1, numCols).getValues();
+  var lastCol = Math.max(sheet.getLastColumn(), 1);
+  var headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+  var colMap = {};
+  for (var c = 0; c < headers.length; c++) {
+    colMap[String(headers[c] || "").trim()] = c;
+  }
+
+  var txCol = colMap.hasOwnProperty("transactionId") ? colMap["transactionId"] : -1;
+  var qrCol = colMap.hasOwnProperty("slipQr") ? colMap["slipQr"] : (colMap.hasOwnProperty("transactionId") ? 1 : 0);
+  var shaCol = colMap.hasOwnProperty("sha256") ? colMap["sha256"] : (colMap.hasOwnProperty("transactionId") ? 2 : 1);
+  var fileIdCol = colMap.hasOwnProperty("fileId") ? colMap["fileId"] : (colMap.hasOwnProperty("transactionId") ? 3 : 2);
+  var fileNameCol = colMap.hasOwnProperty("fileName") ? colMap["fileName"] : (colMap.hasOwnProperty("transactionId") ? 4 : 3);
+
+  var rangeValues = sheet.getRange(2, 1, lastRow - 1, lastCol).getValues();
 
   for (var i = 0; i < rangeValues.length; i++) {
     var row = rangeValues[i];
-    var existingTx = String(row[0] || "").replace(/^'/, "").trim();
-    var existingQr = String(row[1] || "").replace(/^'/, "").trim();
-    var existingSha = String(row[2] || "").replace(/^'/, "").trim().toLowerCase();
-    var fileId = String(row[3] || "");
-    var fileName = String(row[4] || "");
+    var existingTx = txCol >= 0 ? String(row[txCol] || "").replace(/^'/, "").trim() : "";
+    var existingQr = qrCol >= 0 ? String(row[qrCol] || "").replace(/^'/, "").trim() : "";
+    var existingSha = shaCol >= 0 ? String(row[shaCol] || "").replace(/^'/, "").trim().toLowerCase() : "";
+    var fileId = fileIdCol >= 0 ? String(row[fileIdCol] || "").replace(/^'/, "").trim() : "";
+    var fileName = fileNameCol >= 0 ? String(row[fileNameCol] || "").replace(/^'/, "").trim() : "";
 
     // Priority 1: Normalized Transaction ID
     if (transactionId && existingTx && existingTx === transactionId) {

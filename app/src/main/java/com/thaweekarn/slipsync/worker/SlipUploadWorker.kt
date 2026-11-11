@@ -41,98 +41,102 @@ class SlipUploadWorker(
             return Result.success()
         }
 
-        // 3. Read and validate configuration
+        // 3. Read and validate core configuration
         val webAppUrl = prefsRepo.webAppUrl.first()
         val authToken = prefsRepo.authToken.first()
         val selectedFolders = prefsRepo.selectedFolders.first()
 
-        if (webAppUrl.isBlank() || authToken.isBlank() || selectedFolders.isEmpty()) {
+        // Only exit if webAppUrl or authToken is missing.
+        // Even if selectedFolders is empty, pending Shared Slips in Room MUST still be uploaded.
+        if (webAppUrl.isBlank() || authToken.isBlank()) {
             return Result.success()
         }
 
-        // Phase 1: Scan MediaStore for newly added bank slip candidates and record into Room
-        try {
-            val folderActivationMap = mutableMapOf<String, Long>()
-            for (folder in selectedFolders) {
-                folderActivationMap[folder] = prefsRepo.getFolderActivationTimestamp(folder)
-            }
-
-            val candidates = FileUtils.queryCandidateImages(
-                appContext,
-                selectedFolders,
-                folderActivationMap
-            )
-
-            for (candidate in candidates) {
-                try {
-                    val sha256 = appContext.contentResolver.openInputStream(candidate.uri)?.use {
-                        HashUtils.calculateSha256(it)
-                    } ?: continue
-
-                    // Check if already in Room
-                    val existing = slipDao.getSlipBySha256(sha256)
-                    if (existing != null) {
-                        continue
-                    }
-
-                    // Scan QR code offline using bundled ML Kit
-                    val qrPayload = QrScannerHelper.scanQrFromUri(appContext, candidate.uri)
-                    val qrAnalysis = ThaiSlipQrParser.analyze(qrPayload)
-                    val takenAtMs = candidate.dateAddedSec * 1000L
-                    val extension = FileUtils.extractExtension(candidate.displayName, candidate.mimeType)
-                    val targetFileName = FileUtils.generateFileName(takenAtMs, candidate.relativePath, sha256, extension)
-
-                    // Two-tier deduplication check:
-                    // 1. Normalized transaction ID
-                    // 2. Exact QR payload
-                    var isDuplicate = false
-                    if (qrAnalysis.normalizedTransactionId != null) {
-                        val dupByTx = slipDao.getUploadedSlipByTransactionId(qrAnalysis.normalizedTransactionId)
-                        if (dupByTx != null) {
-                            isDuplicate = true
-                        }
-                    }
-                    if (!isDuplicate && qrPayload != null) {
-                        val dupByQr = slipDao.getUploadedSlipByQr(qrPayload)
-                        if (dupByQr != null) {
-                            isDuplicate = true
-                        }
-                    }
-
-                    val initialStatus = if (isDuplicate) {
-                        SlipEntity.STATUS_SKIPPED_DUPLICATE
-                    } else {
-                        SlipEntity.STATUS_PENDING
-                    }
-
-                    val newEntity = SlipEntity(
-                        sha256 = sha256,
-                        mediaStoreId = candidate.id,
-                        slipQr = qrPayload,
-                        hasQr = qrAnalysis.isValidBankQr,
-                        fileName = targetFileName,
-                        mimeType = candidate.mimeType,
-                        extension = extension,
-                        sourceFolder = candidate.relativePath,
-                        status = initialStatus,
-                        attempts = 0,
-                        lastError = if (isDuplicate) "Duplicate slip already uploaded" else null,
-                        takenAt = takenAtMs,
-                        localFilePath = null,
-                        contentUriString = candidate.uri.toString(),
-                        normalizedTransactionId = qrAnalysis.normalizedTransactionId
-                    )
-                    slipDao.insertOrIgnore(newEntity)
-                } catch (candidateEx: Exception) {
-                    candidateEx.printStackTrace()
+        // Phase 1: Scan MediaStore for newly added bank slip candidates (only if folders selected)
+        if (selectedFolders.isNotEmpty()) {
+            try {
+                val folderActivationMap = mutableMapOf<String, Long>()
+                for (folder in selectedFolders) {
+                    folderActivationMap[folder] = prefsRepo.getFolderActivationTimestamp(folder)
                 }
+
+                val candidates = FileUtils.queryCandidateImages(
+                    appContext,
+                    selectedFolders,
+                    folderActivationMap
+                )
+
+                for (candidate in candidates) {
+                    try {
+                        val sha256 = appContext.contentResolver.openInputStream(candidate.uri)?.use {
+                            HashUtils.calculateSha256(it)
+                        } ?: continue
+
+                        // Check if already in Room
+                        val existing = slipDao.getSlipBySha256(sha256)
+                        if (existing != null) {
+                            continue
+                        }
+
+                        // Scan QR code offline using bundled ML Kit
+                        val qrPayload = QrScannerHelper.scanQrFromUri(appContext, candidate.uri)
+                        val qrAnalysis = ThaiSlipQrParser.analyze(qrPayload)
+                        val takenAtMs = candidate.dateAddedSec * 1000L
+                        val extension = FileUtils.extractExtension(candidate.displayName, candidate.mimeType)
+                        val targetFileName = FileUtils.generateFileName(takenAtMs, candidate.relativePath, sha256, extension)
+
+                        // Two-tier deduplication check:
+                        // 1. Normalized transaction ID
+                        // 2. Exact QR payload
+                        var isDuplicate = false
+                        if (qrAnalysis.normalizedTransactionId != null) {
+                            val dupByTx = slipDao.getUploadedSlipByTransactionId(qrAnalysis.normalizedTransactionId)
+                            if (dupByTx != null) {
+                                isDuplicate = true
+                            }
+                        }
+                        if (!isDuplicate && qrPayload != null) {
+                            val dupByQr = slipDao.getUploadedSlipByQr(qrPayload)
+                            if (dupByQr != null) {
+                                isDuplicate = true
+                            }
+                        }
+
+                        val initialStatus = if (isDuplicate) {
+                            SlipEntity.STATUS_SKIPPED_DUPLICATE
+                        } else {
+                            SlipEntity.STATUS_PENDING
+                        }
+
+                        val newEntity = SlipEntity(
+                            sha256 = sha256,
+                            mediaStoreId = candidate.id,
+                            slipQr = qrPayload,
+                            hasQr = qrAnalysis.isValidBankQr,
+                            fileName = targetFileName,
+                            mimeType = candidate.mimeType,
+                            extension = extension,
+                            sourceFolder = candidate.relativePath,
+                            status = initialStatus,
+                            attempts = 0,
+                            lastError = if (isDuplicate) "Duplicate slip already uploaded" else null,
+                            takenAt = takenAtMs,
+                            localFilePath = null,
+                            contentUriString = candidate.uri.toString(),
+                            normalizedTransactionId = qrAnalysis.normalizedTransactionId
+                        )
+                        slipDao.insertOrIgnore(newEntity)
+                    } catch (candidateEx: Exception) {
+                        candidateEx.printStackTrace()
+                    }
+                }
+                prefsRepo.setLastScanTimestamp(System.currentTimeMillis())
+            } catch (scanEx: Exception) {
+                scanEx.printStackTrace()
             }
-            prefsRepo.setLastScanTimestamp(System.currentTimeMillis())
-        } catch (scanEx: Exception) {
-            scanEx.printStackTrace()
         }
 
-        // Phase 2: Process upload queue (Durable queue with lease recovery)
+        // Phase 2: Process upload queue (Durable queue with lease recovery & workerRunId ownership)
         val workerRunId = "worker_${UUID.randomUUID().toString().take(8)}"
         val leaseDurationMs = 5 * 60 * 1000L // 5 minutes lease per item
         val eligibleUploads = slipDao.getEligibleUploads(now = System.currentTimeMillis(), limit = 25)
@@ -164,8 +168,9 @@ class SlipUploadWorker(
                 val base64Result = FileUtils.readImageAsBase64(appContext, mediaUri, localFile)
                 if (base64Result == null) {
                     val currentAttempts = slip.attempts + 1
-                    slipDao.updateUploadResult(
+                    slipDao.updateUploadResultWithOwner(
                         sha256 = slip.sha256,
+                        workerId = workerRunId,
                         status = SlipEntity.STATUS_FAILED,
                         attempts = currentAttempts,
                         lastError = "File exceeds 10 MB limit or cannot be read",
@@ -212,8 +217,9 @@ class SlipUploadWorker(
                 }
 
                 if (localDup) {
-                    slipDao.updateUploadResult(
+                    slipDao.updateUploadResultWithOwner(
                         sha256 = slip.sha256,
+                        workerId = workerRunId,
                         status = SlipEntity.STATUS_SKIPPED_DUPLICATE,
                         attempts = slip.attempts,
                         lastError = "Duplicate QR/Transaction already uploaded",
@@ -255,8 +261,9 @@ class SlipUploadWorker(
                                 SlipEntity.STATUS_UPLOADED_NO_QR
                             }
 
-                            slipDao.updateUploadResult(
+                            val updated = slipDao.updateUploadResultWithOwner(
                                 sha256 = slip.sha256,
+                                workerId = workerRunId,
                                 status = finalStatus,
                                 attempts = currentAttempts,
                                 lastError = if (apiResp.duplicate) "Server marked as duplicate" else null,
@@ -264,13 +271,16 @@ class SlipUploadWorker(
                                 driveFileId = apiResp.fileId
                             )
 
-                            if (!apiResp.duplicate) {
+                            // Health tracking: only update lastSuccessfulUpload after confirmed successful upload with lease ownership
+                            if (updated > 0 && !apiResp.duplicate) {
+                                prefsRepo.setLastSuccessfulUpload(uploadSuccessTime)
                                 successfulUploads++
                             }
                         } else {
                             val errorMsg = apiResp.error ?: "Server rejected upload"
-                            slipDao.updateUploadResult(
+                            slipDao.updateUploadResultWithOwner(
                                 sha256 = slip.sha256,
+                                workerId = workerRunId,
                                 status = SlipEntity.STATUS_FAILED,
                                 attempts = currentAttempts,
                                 lastError = errorMsg,
@@ -287,8 +297,9 @@ class SlipUploadWorker(
                         val errorMsg = error.message ?: "Network communication error"
                         prefsRepo.recordServerStatus(errorMsg, 0)
 
-                        slipDao.updateUploadResult(
+                        slipDao.updateUploadResultWithOwner(
                             sha256 = slip.sha256,
+                            workerId = workerRunId,
                             status = SlipEntity.STATUS_FAILED,
                             attempts = currentAttempts,
                             lastError = errorMsg,
@@ -303,8 +314,9 @@ class SlipUploadWorker(
             } catch (itemEx: Exception) {
                 hasTransientError = true
                 itemEx.printStackTrace()
-                slipDao.updateUploadResult(
+                slipDao.updateUploadResultWithOwner(
                     sha256 = slip.sha256,
+                    workerId = workerRunId,
                     status = SlipEntity.STATUS_FAILED,
                     attempts = slip.attempts + 1,
                     lastError = itemEx.message ?: "Unexpected processing error",

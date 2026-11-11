@@ -103,6 +103,32 @@ interface SlipDao {
         driveFileId: String?
     )
 
+    /**
+     * Atomically updates the upload result ONLY if the workerRunId matches the leased worker.
+     * Prevents an expired, timed-out, or preempted worker from overwriting newer upload state.
+     * Returns the number of rows updated (1 if ownership held, 0 if lease was lost).
+     */
+    @Query("""
+        UPDATE slips 
+        SET status = :status, 
+            attempts = :attempts, 
+            lastError = :lastError, 
+            uploadedAt = :uploadedAt, 
+            driveFileId = :driveFileId,
+            uploadLeaseUntil = 0,
+            workerRunId = null
+        WHERE sha256 = :sha256 AND workerRunId = :workerId
+    """)
+    suspend fun updateUploadResultWithOwner(
+        sha256: String,
+        workerId: String,
+        status: String,
+        attempts: Int,
+        lastError: String?,
+        uploadedAt: Long?,
+        driveFileId: String?
+    ): Int
+
     @Query("UPDATE slips SET status = 'SKIPPED_IGNORED', uploadLeaseUntil = 0, workerRunId = null WHERE sha256 = :sha256")
     suspend fun ignoreSlip(sha256: String)
 

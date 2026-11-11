@@ -17,17 +17,30 @@ object CryptoManager {
     private const val GCM_TAG_LENGTH = 128
     private const val IV_LENGTH = 12
 
+    // Detect JVM unit test runner (Robolectric)
+    val isTestEnvironment: Boolean by lazy {
+        try {
+            Class.forName("org.robolectric.Robolectric")
+            true
+        } catch (e: Throwable) {
+            false
+        }
+    }
+
+    // In unit test runner ONLY, cached key facilitates execution without Android hardware daemon
     @Volatile
-    private var cachedSecretKey: SecretKey? = null
+    private var testCachedSecretKey: SecretKey? = null
 
     private val keyStore: KeyStore by lazy {
-        try {
-            KeyStore.getInstance(ANDROID_KEYSTORE).apply {
-                load(null)
+        if (isTestEnvironment) {
+            try {
+                KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) }
+            } catch (e: Exception) {
+                KeyStore.getInstance(KeyStore.getDefaultType()).apply { load(null) }
             }
-        } catch (e: Exception) {
-            // JVM / Robolectric fallback
-            KeyStore.getInstance(KeyStore.getDefaultType()).apply {
+        } else {
+            // Production Android: STRICTLY require hardware-backed AndroidKeyStore
+            KeyStore.getInstance(ANDROID_KEYSTORE).apply {
                 load(null)
             }
         }
@@ -35,50 +48,37 @@ object CryptoManager {
 
     @Synchronized
     private fun getOrCreateSecretKey(): SecretKey {
-        cachedSecretKey?.let { return it }
-
-        if (!keyStore.containsAlias(KEY_ALIAS)) {
-            try {
-                val keyGenerator = KeyGenerator.getInstance(
-                    KeyProperties.KEY_ALGORITHM_AES,
-                    ANDROID_KEYSTORE
-                )
-                val builder = KeyGenParameterSpec.Builder(
-                    KEY_ALIAS,
-                    KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT
-                )
-                    .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
-                    .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
-                    .setKeySize(256)
-                    .setRandomizedEncryptionRequired(true)
-
-                keyGenerator.init(builder.build())
-                val generated = keyGenerator.generateKey()
-                cachedSecretKey = generated
-                return generated
-            } catch (e: Exception) {
-                // JVM test runner fallback
-                val keyGen = KeyGenerator.getInstance("AES")
-                keyGen.init(256)
-                val key = keyGen.generateKey()
-                cachedSecretKey = key
-                return key
-            }
-        }
-
-        val loadedKey = try {
-            (keyStore.getEntry(KEY_ALIAS, null) as? KeyStore.SecretKeyEntry)?.secretKey
-                ?: (keyStore.getKey(KEY_ALIAS, null) as? SecretKey)
-        } catch (e: Exception) {
-            null
-        } ?: run {
+        if (isTestEnvironment) {
+            testCachedSecretKey?.let { return it }
             val keyGen = KeyGenerator.getInstance("AES")
             keyGen.init(256)
-            keyGen.generateKey()
+            val generated = keyGen.generateKey()
+            testCachedSecretKey = generated
+            return generated
         }
 
-        cachedSecretKey = loadedKey
-        return loadedKey
+        // Production path: Pure AndroidKeyStore without ephemeral fallback
+        if (!keyStore.containsAlias(KEY_ALIAS)) {
+            val keyGenerator = KeyGenerator.getInstance(
+                KeyProperties.KEY_ALGORITHM_AES,
+                ANDROID_KEYSTORE
+            )
+            val builder = KeyGenParameterSpec.Builder(
+                KEY_ALIAS,
+                KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT
+            )
+                .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
+                .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
+                .setKeySize(256)
+                .setRandomizedEncryptionRequired(true)
+
+            keyGenerator.init(builder.build())
+            keyGenerator.generateKey()
+        }
+
+        val entry = keyStore.getEntry(KEY_ALIAS, null) as? KeyStore.SecretKeyEntry
+            ?: throw SecurityException("Failed to retrieve persistent key from AndroidKeyStore")
+        return entry.secretKey
     }
 
     /**
@@ -88,22 +88,17 @@ object CryptoManager {
     @Synchronized
     fun encrypt(plainText: String): String {
         if (plainText.isBlank()) return ""
-        return try {
-            val secretKey = getOrCreateSecretKey()
-            val cipher = Cipher.getInstance(TRANSFORMATION)
-            cipher.init(Cipher.ENCRYPT_MODE, secretKey)
-            val iv = cipher.iv
-            val cipherText = cipher.doFinal(plainText.toByteArray(Charsets.UTF_8))
+        val secretKey = getOrCreateSecretKey()
+        val cipher = Cipher.getInstance(TRANSFORMATION)
+        cipher.init(Cipher.ENCRYPT_MODE, secretKey)
+        val iv = cipher.iv
+        val cipherText = cipher.doFinal(plainText.toByteArray(Charsets.UTF_8))
 
-            val combined = ByteArray(iv.size + cipherText.size)
-            System.arraycopy(iv, 0, combined, 0, iv.size)
-            System.arraycopy(cipherText, 0, combined, iv.size, cipherText.size)
+        val combined = ByteArray(iv.size + cipherText.size)
+        System.arraycopy(iv, 0, combined, 0, iv.size)
+        System.arraycopy(cipherText, 0, combined, iv.size, cipherText.size)
 
-            Base64.encodeToString(combined, Base64.NO_WRAP)
-        } catch (e: Exception) {
-            e.printStackTrace()
-            ""
-        }
+        return Base64.encodeToString(combined, Base64.NO_WRAP)
     }
 
     /**
@@ -112,24 +107,19 @@ object CryptoManager {
     @Synchronized
     fun decrypt(encryptedBase64: String): String {
         if (encryptedBase64.isBlank()) return ""
-        return try {
-            val combined = Base64.decode(encryptedBase64, Base64.NO_WRAP)
-            if (combined.size <= IV_LENGTH) return ""
+        val combined = Base64.decode(encryptedBase64, Base64.NO_WRAP)
+        if (combined.size <= IV_LENGTH) return ""
 
-            val iv = ByteArray(IV_LENGTH)
-            val cipherText = ByteArray(combined.size - IV_LENGTH)
-            System.arraycopy(combined, 0, iv, 0, IV_LENGTH)
-            System.arraycopy(combined, IV_LENGTH, cipherText, 0, cipherText.size)
+        val iv = ByteArray(IV_LENGTH)
+        val cipherText = ByteArray(combined.size - IV_LENGTH)
+        System.arraycopy(combined, 0, iv, 0, IV_LENGTH)
+        System.arraycopy(combined, IV_LENGTH, cipherText, 0, cipherText.size)
 
-            val secretKey = getOrCreateSecretKey()
-            val cipher = Cipher.getInstance(TRANSFORMATION)
-            val spec = GCMParameterSpec(GCM_TAG_LENGTH, iv)
-            cipher.init(Cipher.DECRYPT_MODE, secretKey, spec)
+        val secretKey = getOrCreateSecretKey()
+        val cipher = Cipher.getInstance(TRANSFORMATION)
+        val spec = GCMParameterSpec(GCM_TAG_LENGTH, iv)
+        cipher.init(Cipher.DECRYPT_MODE, secretKey, spec)
 
-            String(cipher.doFinal(cipherText), Charsets.UTF_8)
-        } catch (e: Exception) {
-            e.printStackTrace()
-            ""
-        }
+        return String(cipher.doFinal(cipherText), Charsets.UTF_8)
     }
 }
